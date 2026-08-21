@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Cpu, 
-  Database, 
   Download, 
   RefreshCw, 
   Trash2, 
@@ -21,7 +20,14 @@ import {
   ChevronDown,
   ChevronUp,
   Mic,
-  Bot
+  Bot,
+  User,
+  FileText,
+  Upload,
+  Paperclip,
+  Save,
+  ArrowLeft,
+  ExternalLink
 } from 'lucide-react';
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin } from '@capacitor/core';
@@ -131,7 +137,7 @@ export default function App() {
   const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
 
   // Tab navigation states
-  const [activeTab, setActiveTab] = useState<'downloader' | 'animly'>('downloader');
+  const [activeTab, setActiveTab] = useState<'downloader' | 'animly' | 'profile'>('downloader');
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
 
   // HF Token state
@@ -166,6 +172,127 @@ export default function App() {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [extendedThinking, setExtendedThinking] = useState<boolean>(false);
+
+  // Student Profile State (100% Local Storage)
+  const [isFullscreenResumeOpen, setIsFullscreenResumeOpen] = useState<boolean>(false);
+  const [studentProfile, setStudentProfile] = useState<{
+    name: string;
+    email: string;
+    studentId: string;
+    course: string;
+    skills: string;
+    bio: string;
+    avatarPhoto: string;
+    resumeName: string;
+    resumeType: string;
+    resumeData: string; // base64 data URL
+  }>(() => {
+    const saved = localStorage.getItem('acro_student_profile');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {
+      name: 'Alex Rivera',
+      email: 'alex.rivera@student.acro.edu',
+      studentId: 'ACRO-2026-8941',
+      course: 'Computer Science & AI Engineering',
+      skills: 'Python, Kotlin, PyTorch, React, Machine Learning',
+      bio: 'Enthusiastic CS student specializing in edge AI inference, deep learning optimization, and mobile computing.',
+      avatarPhoto: '',
+      resumeName: '',
+      resumeType: '',
+      resumeData: ''
+    };
+  });
+
+  const saveStudentProfile = (updated: typeof studentProfile) => {
+    setStudentProfile(updated);
+    localStorage.setItem('acro_student_profile', JSON.stringify(updated));
+    triggerAlert('Student Profile saved locally!', 'success');
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      triggerAlert('Profile photo must be under 5MB.', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      const updated = { ...studentProfile, avatarPhoto: base64 };
+      saveStudentProfile(updated);
+      triggerAlert('Profile photo updated!', 'success');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      triggerAlert('File size exceeds 10MB limit.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      const updated = {
+        ...studentProfile,
+        resumeName: file.name,
+        resumeType: file.type || 'application/pdf',
+        resumeData: base64
+      };
+      saveStudentProfile(updated);
+      triggerAlert(`Resume "${file.name}" uploaded & saved locally!`, 'success');
+    };
+    reader.onerror = () => {
+      triggerAlert('Failed to read resume file.', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Robust cross-platform base64 download helper for Android WebViews
+  const handleDownloadResume = () => {
+    if (!studentProfile.resumeData) return;
+    try {
+      playSynthSound('click');
+      const filename = studentProfile.resumeName || 'Student_Resume.pdf';
+      
+      // Convert base64 data URL to Blob for WebView download compatibility
+      const parts = studentProfile.resumeData.split(';base64,');
+      const contentType = parts[0].replace('data:', '');
+      const raw = window.atob(parts[1]);
+      const rawLength = raw.length;
+      const uInt8Array = new Uint8Array(rawLength);
+      for (let i = 0; i < rawLength; ++i) {
+        uInt8Array[i] = raw.charCodeAt(i);
+      }
+      const blob = new Blob([uInt8Array], { type: contentType });
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
+      triggerAlert(`Downloading ${filename}...`, 'success');
+    } catch (e) {
+      // Fallback direct link click
+      const a = document.createElement('a');
+      a.href = studentProfile.resumeData;
+      a.download = studentProfile.resumeName || 'Student_Resume.pdf';
+      a.click();
+    }
+  };
 
   // Toggles
   const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
@@ -238,10 +365,33 @@ export default function App() {
     }
   };
 
-  // Toast feedback helper
+  // Toast feedback helper & System Notification
   const triggerAlert = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
     setAlertMsg({ text, type });
     setTimeout(() => setAlertMsg(null), 3500);
+
+    // Native Notification Drawer trigger
+    if ('Notification' in window) {
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification('Acro AI Suite', {
+            body: text,
+            icon: '/acro-logo.png'
+          });
+        } catch (e) {}
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(perm => {
+          if (perm === 'granted') {
+            try {
+              new Notification('Acro AI Suite', {
+                body: text,
+                icon: '/acro-logo.png'
+              });
+            } catch (e) {}
+          }
+        });
+      }
+    }
   };
 
   // Check models native status on load
@@ -347,30 +497,39 @@ export default function App() {
     }
   };
 
-  // Refresh Storage Simulator
+  // Refresh Storage
   const refreshStorage = async () => {
     playSynthSound('click');
     setIsRefreshingStorage(true);
     
-    // Sync storage space based on actual files present on disk
-    let spaceTaken = 0;
-    for (const m of MODELS) {
-      try {
-        const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
-        if (res.status === 'installed') {
-          spaceTaken += res.size;
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        if (estimate.quota) {
+          const free = Math.max(0, estimate.quota - (estimate.usage || 0));
+          setAvailableStorage(free);
         }
-      } catch (e) {
-        // ignore
+      } else {
+        let spaceTaken = 0;
+        for (const m of MODELS) {
+          try {
+            const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
+            if (res.status === 'installed') {
+              spaceTaken += res.size;
+            }
+          } catch (e) {}
+        }
+        setAvailableStorage(Math.max(0, 18500000000 - spaceTaken));
       }
+    } catch (err) {
+      // fallback
     }
 
     setTimeout(() => {
       setIsRefreshingStorage(false);
-      setAvailableStorage(15247134720 - spaceTaken);
       playSynthSound('success');
       triggerAlert('Device storage registers synchronized successfully.', 'success');
-    }, 800);
+    }, 500);
   };
 
   // Save token
@@ -624,26 +783,41 @@ export default function App() {
       {/* Header */}
       <header>
         <div className="brand">
-          <Database size={24} style={{ color: 'var(--color-indigo)' }} />
-          <h1>Helply AI Downloader</h1>
+          <img src="/acro-logo.png" alt="Acro Logo" className="brand-logo-img" />
+          <div className="brand-text">
+            <h1>Acro</h1>
+            <span className="brand-subtitle">AI Model Suite</span>
+          </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="header-actions">
           {isPwaInstalled && (
-            <div className="status-badge" style={{ background: '#dcfce7', borderColor: '#bbf7d0', color: 'var(--color-emerald)' }}>
-              <span>Installed Client</span>
+            <div className="status-badge client-badge">
+              <Check size={12} />
+              <span>Mobile Client</span>
             </div>
           )}
           {deferredPrompt && (
-            <button className="btn btn-secondary" onClick={runInstall} style={{ padding: '0.35rem 0.75rem', borderRadius: '50px' }}>
-              <Smartphone size={14} /> Install Client
+            <button className="btn btn-secondary install-btn" onClick={runInstall}>
+              <Smartphone size={14} /> <span>Install</span>
             </button>
           )}
+          <button 
+            className={`profile-btn-header ${activeTab === 'profile' ? 'active' : ''}`}
+            onClick={() => {
+              playSynthSound('click');
+              setActiveTab('profile');
+            }}
+            title="Student Profile & Resume"
+          >
+            <User size={18} />
+          </button>
         </div>
       </header>
 
       {/* Main Panel grid */}
-      <div className="dashboard-grid">
+      {activeTab === 'downloader' && (
+        <div className="dashboard-grid">
         
         {/* Banner Section: Disk Space */}
         <div className="storage-banner">
@@ -910,6 +1084,7 @@ export default function App() {
         </div>
 
       </div>
+      )}
 
       {/* Floating feedback alert */}
       {alertMsg && (
@@ -960,10 +1135,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer */}
-      <footer>
-        <p>Helply AI Downloader Client • PWA Android Build compiled with Capacitor & React</p>
-      </footer>
+      {/* Footer (Only for Downloader tab) */}
+      {activeTab === 'downloader' && (
+        <footer>
+          <p>Acro AI Suite • On-Device Neural Engine • Powered by MediaPipe & React</p>
+        </footer>
+      )}
 
       {/* Bottom Navigation Bar */}
       <nav className="bottom-nav">
@@ -987,6 +1164,16 @@ export default function App() {
         >
           <Tv size={20} />
           <span>Animly Web</span>
+        </button>
+        <button 
+          className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('profile');
+          }}
+        >
+          <User size={20} />
+          <span>Profile</span>
         </button>
       </nav>
 
@@ -1186,6 +1373,258 @@ export default function App() {
             >
               <Send size={14} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Student Profile Section Tab */}
+      {activeTab === 'profile' && (
+        <div className="profile-page-container">
+          <div className="profile-page-header">
+            <button 
+              className="btn btn-secondary back-nav-btn" 
+              onClick={() => {
+                playSynthSound('click');
+                setActiveTab('downloader');
+              }}
+            >
+              <ArrowLeft size={16} /> Back to Dashboard
+            </button>
+            <div className="profile-page-title">
+              <User size={22} className="profile-icon-heading" />
+              <h2>Student Profile & Saved Resume</h2>
+            </div>
+          </div>
+
+          {/* Profile Card Banner */}
+          <div className="profile-card-banner">
+            <div className="profile-avatar-container">
+              {studentProfile.avatarPhoto ? (
+                <img src={studentProfile.avatarPhoto} alt="Profile Avatar" className="profile-avatar-img" />
+              ) : (
+                <div className="profile-avatar">
+                  {studentProfile.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+                </div>
+              )}
+              <label className="avatar-edit-badge" title="Change Profile Photo">
+                <Upload size={12} />
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleAvatarUpload}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </div>
+            <div className="profile-card-details">
+              <h3>{studentProfile.name}</h3>
+              <span className="profile-id">{studentProfile.studentId}</span>
+              <span className="profile-course">{studentProfile.course}</span>
+            </div>
+          </div>
+
+          {/* Edit Profile Form */}
+          <div className="profile-section">
+            <h3 className="profile-section-title">Personal Details (Stored Locally)</h3>
+            
+            <div className="form-group-row">
+              <div className="form-group">
+                <label>Full Name</label>
+                <input 
+                  type="text" 
+                  value={studentProfile.name}
+                  onChange={(e) => setStudentProfile({ ...studentProfile, name: e.target.value })}
+                  placeholder="Student Full Name"
+                />
+              </div>
+              <div className="form-group">
+                <label>Student ID</label>
+                <input 
+                  type="text" 
+                  value={studentProfile.studentId}
+                  onChange={(e) => setStudentProfile({ ...studentProfile, studentId: e.target.value })}
+                  placeholder="e.g. ACRO-2026-1024"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Email Address</label>
+              <input 
+                type="email" 
+                value={studentProfile.email}
+                onChange={(e) => setStudentProfile({ ...studentProfile, email: e.target.value })}
+                placeholder="student@university.edu"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Course / Major</label>
+              <input 
+                type="text" 
+                value={studentProfile.course}
+                onChange={(e) => setStudentProfile({ ...studentProfile, course: e.target.value })}
+                placeholder="Computer Science, Electronics..."
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Technical Skills</label>
+              <input 
+                type="text" 
+                value={studentProfile.skills}
+                onChange={(e) => setStudentProfile({ ...studentProfile, skills: e.target.value })}
+                placeholder="Python, Java, Android, Machine Learning"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Bio / Summary</label>
+              <textarea 
+                rows={2}
+                value={studentProfile.bio}
+                onChange={(e) => setStudentProfile({ ...studentProfile, bio: e.target.value })}
+                placeholder="Brief academic profile..."
+              />
+            </div>
+
+            <button 
+              className="btn btn-primary save-profile-btn"
+              onClick={() => {
+                playSynthSound('success');
+                saveStudentProfile(studentProfile);
+              }}
+            >
+              <Save size={16} /> Save Profile Details
+            </button>
+          </div>
+
+          {/* Resume Section */}
+          <div className="profile-section resume-section">
+            <h3 className="profile-section-title">Student Resume Document</h3>
+            
+            {studentProfile.resumeData ? (
+              <div className="resume-preview-card">
+                <div className="resume-info">
+                  <FileText size={32} className="resume-icon" />
+                  <div className="resume-meta">
+                    <span className="resume-filename">{studentProfile.resumeName || 'Uploaded_Resume.pdf'}</span>
+                    <span className="resume-status-badge">100% Stored Locally on Device</span>
+                  </div>
+                </div>
+
+                {/* Inline Resume Document Viewer */}
+                <div className="resume-inline-viewer">
+                  <div className="resume-viewer-header">
+                    <span>Document Live Preview</span>
+                    <button 
+                      className="btn btn-secondary resume-external-link"
+                      onClick={() => {
+                        playSynthSound('click');
+                        setIsFullscreenResumeOpen(true);
+                      }}
+                    >
+                      <ExternalLink size={12} /> Open Fullscreen
+                    </button>
+                  </div>
+                  {studentProfile.resumeType.startsWith('image/') ? (
+                    <img src={studentProfile.resumeData} alt="Resume Preview" className="resume-image-preview" />
+                  ) : (
+                    <iframe 
+                      src={studentProfile.resumeData} 
+                      title="Resume Preview Frame" 
+                      className="resume-doc-frame"
+                    />
+                  )}
+                </div>
+
+                <div className="resume-actions">
+                  <button 
+                    className="btn btn-primary resume-action-btn"
+                    onClick={handleDownloadResume}
+                  >
+                    <Download size={14} /> Download Resume File
+                  </button>
+
+                  <label className="btn btn-secondary resume-action-btn upload-replace-label">
+                    <Upload size={14} /> Upload / Replace Resume
+                    <input 
+                      type="file" 
+                      accept=".pdf,.doc,.docx,.txt,image/*" 
+                      onChange={handleResumeUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+
+                  <button 
+                    className="btn btn-secondary resume-action-btn delete-resume-btn"
+                    onClick={() => {
+                      playSynthSound('delete');
+                      const updated = { ...studentProfile, resumeName: '', resumeType: '', resumeData: '' };
+                      saveStudentProfile(updated);
+                      triggerAlert('Resume removed.', 'info');
+                    }}
+                  >
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="resume-upload-dropzone">
+                <Paperclip size={36} className="dropzone-icon" />
+                <p className="dropzone-title">Upload Existing Resume</p>
+                <p className="dropzone-desc">Select your resume file (PDF, DOCX, TXT, or Image)</p>
+                <label className="btn btn-primary upload-resume-btn">
+                  <Upload size={16} /> Select Resume File
+                  <input 
+                    type="file" 
+                    accept=".pdf,.doc,.docx,.txt,image/*" 
+                    onChange={handleResumeUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Resume Modal Viewer */}
+      {isFullscreenResumeOpen && (
+        <div className="fullscreen-resume-overlay" onClick={() => setIsFullscreenResumeOpen(false)}>
+          <div className="fullscreen-resume-container" onClick={(e) => e.stopPropagation()}>
+            <div className="fullscreen-resume-header">
+              <div className="fullscreen-title">
+                <FileText size={20} />
+                <span>{studentProfile.resumeName || 'Student_Resume.pdf'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button 
+                  className="btn btn-primary"
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                  onClick={handleDownloadResume}
+                >
+                  <Download size={14} /> Download
+                </button>
+                <button 
+                  className="modal-close-btn"
+                  onClick={() => setIsFullscreenResumeOpen(false)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="fullscreen-resume-body">
+              {studentProfile.resumeType.startsWith('image/') ? (
+                <img src={studentProfile.resumeData} alt="Fullscreen Resume" className="fullscreen-resume-img" />
+              ) : (
+                <iframe 
+                  src={studentProfile.resumeData} 
+                  title="Fullscreen Document Viewer" 
+                  className="fullscreen-resume-frame" 
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

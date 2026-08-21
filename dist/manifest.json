@@ -1,21 +1,21 @@
 {
-  "short_name": "Proxims",
-  "name": "Proxims Proximity Network",
+  "short_name": "Acro",
+  "name": "Acro AI Downloader",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "acro-logo.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "icon-512.png",
+      "src": "acro-logo.png",
       "type": "image/png",
       "sizes": "512x512"
     }
   ],
   "start_url": ".",
-  "background_color": "#020617",
-  "theme_color": "#06b6d4",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
   "display": "standalone",
   "orientation": "portrait"
 }
