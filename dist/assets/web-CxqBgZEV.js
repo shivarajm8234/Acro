@@ -1,0 +1,1 @@
+import{t as e}from"./index-CrgwX2Uw.js";var t=class extends e{async start(){}async stop(){}};export{t as XframeWeb};
