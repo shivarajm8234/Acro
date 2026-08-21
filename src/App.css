@@ -1532,4 +1532,97 @@ footer {
   padding: 1rem;
 }
 
+/* Top Floating White Notification Toast */
+.top-notification-banner {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  width: 92%;
+  max-width: 480px;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  animation: slideDownFade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.top-notification-banner.success {
+  border-left: 5px solid #10b981;
+}
+
+.top-notification-banner.error {
+  border-left: 5px solid #ef4444;
+}
+
+.top-notification-banner.info {
+  border-left: 5px solid #4f46e5;
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.notification-icon {
+  color: #4f46e5;
+  flex-shrink: 0;
+}
+
+.notification-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.notification-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.pdf-container-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.pdf-fallback-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 

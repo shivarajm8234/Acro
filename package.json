@@ -15,6 +15,7 @@
     "@capacitor/core": "^8.5.0",
     "capacitor-plugin-xframe": "^8.2.0",
     "lucide-react": "^1.33.0",
+    "pdfjs-dist": "^3.11.174",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

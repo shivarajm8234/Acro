@@ -9,10 +9,7 @@ import {
   Eye, 
   EyeOff, 
   Check, 
-  AlertCircle, 
   CheckCircle,
-  CloudLightning,
-  Smartphone,
   Tv,
   MessageSquare,
   Send,
@@ -23,12 +20,17 @@ import {
   Bot,
   User,
   FileText,
+  Bell,
   Upload,
   Paperclip,
   Save,
   ArrowLeft,
   ExternalLink
 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure pdfjs worker for native canvas PDF rendering
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin } from '@capacitor/core';
 import './App.css';
@@ -132,6 +134,91 @@ const LlmInference = registerPlugin('LlmInference') as {
   getStatus(): Promise<{ isLoaded: boolean; loadedModelId: string; isLoading: boolean }>;
 };
 
+function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isCancelled = false;
+    async function renderPdfPage() {
+      setIsLoadingPdf(true);
+      try {
+        const parts = dataUrl.split(';base64,');
+        const base64Data = parts.length === 2 ? parts[1] : dataUrl;
+        const binaryString = window.atob(base64Data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const loadingTask = pdfjsLib.getDocument({ data: bytes });
+        const pdf = await loadingTask.promise;
+        if (isCancelled) return;
+        setNumPages(pdf.numPages);
+        
+        const page = await pdf.getPage(currentPage);
+        if (isCancelled) return;
+
+        const viewport = page.getViewport({ scale: 1.1 });
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          if (context) {
+            await page.render({
+              canvasContext: context,
+              viewport: viewport
+            }).promise;
+          }
+        }
+        setIsLoadingPdf(false);
+      } catch (err: any) {
+        if (isCancelled) return;
+        console.warn('PDF canvas render fallback:', err);
+        setIsLoadingPdf(false);
+      }
+    }
+    if (dataUrl) {
+      renderPdfPage();
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [dataUrl, currentPage]);
+
+  return (
+    <div className="pdf-canvas-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', overflowX: 'auto', background: '#f8fafc', padding: '0.5rem', borderRadius: '8px' }}>
+      {isLoadingPdf && <div style={{ fontSize: '0.8rem', color: '#64748b', padding: '1rem' }}>Loading PDF Document...</div>}
+      <canvas ref={canvasRef} style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', borderRadius: '4px', background: '#ffffff' }} />
+      {numPages > 1 && (
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem', color: '#334155' }}>
+          <button 
+            disabled={currentPage <= 1} 
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            className="btn btn-secondary"
+            style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+          >
+            Prev
+          </button>
+          <span>Page {currentPage} of {numPages}</span>
+          <button 
+            disabled={currentPage >= numPages} 
+            onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
+            className="btn btn-secondary"
+            style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // Storage State
   const [availableStorage, setAvailableStorage] = useState<number>(15247134720); // ~14.2 GB
@@ -205,6 +292,39 @@ export default function App() {
       resumeData: ''
     };
   });
+
+  const [resumeBlobUrl, setResumeBlobUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (!studentProfile.resumeData) {
+      setResumeBlobUrl('');
+      return;
+    }
+    if (studentProfile.resumeData.startsWith('data:')) {
+      try {
+        const parts = studentProfile.resumeData.split(';base64,');
+        if (parts.length === 2) {
+          const contentType = parts[0].replace('data:', '') || 'application/pdf';
+          const raw = window.atob(parts[1]);
+          const rawLength = raw.length;
+          const uInt8Array = new Uint8Array(rawLength);
+          for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+          }
+          const blob = new Blob([uInt8Array], { type: contentType });
+          const url = URL.createObjectURL(blob);
+          setResumeBlobUrl(url);
+          return () => {
+            URL.revokeObjectURL(url);
+          };
+        }
+      } catch (e) {
+        setResumeBlobUrl(studentProfile.resumeData);
+      }
+    } else {
+      setResumeBlobUrl(studentProfile.resumeData);
+    }
+  }, [studentProfile.resumeData]);
 
   const saveStudentProfile = (updated: typeof studentProfile) => {
     setStudentProfile(updated);
@@ -301,9 +421,7 @@ export default function App() {
   const [gmailSync, setGmailSync] = useState<boolean>(true);
   const [githubSync, setGithubSync] = useState<boolean>(true);
 
-  // PWA Prompt
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isPwaInstalled, setIsPwaInstalled] = useState<boolean>(false);
+
 
   // Feedback Alerts
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -366,33 +484,12 @@ export default function App() {
     }
   };
 
-  // Toast feedback helper & System Notification
-  const triggerAlert = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+  // Clean Top White Toast Feedback Helper (No emojis, no lower system drawer popup)
+  const triggerAlert = (rawText: string, type: 'success' | 'info' | 'error' = 'info') => {
+    // Strip emojis
+    const text = rawText.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
     setAlertMsg({ text, type });
     setTimeout(() => setAlertMsg(null), 3500);
-
-    // Native Notification Drawer trigger
-    if ('Notification' in window) {
-      if (Notification.permission === 'granted') {
-        try {
-          new Notification('Acro AI Suite', {
-            body: text,
-            icon: '/acro-logo.png'
-          });
-        } catch (e) {}
-      } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission().then(perm => {
-          if (perm === 'granted') {
-            try {
-              new Notification('Acro AI Suite', {
-                body: text,
-                icon: '/acro-logo.png'
-              });
-            } catch (e) {}
-          }
-        });
-      }
-    }
   };
 
   // Check models native status on load
@@ -481,40 +578,7 @@ export default function App() {
     }).catch(err => {
       console.warn('XFrame plugin starting failed:', err);
     });
-
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    const handleInstalled = () => {
-      setIsPwaInstalled(true);
-      setDeferredPrompt(null);
-      playSynthSound('success');
-      triggerAlert('🎉 Helply AI Downloader installed locally!', 'success');
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleInstalled);
-
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setIsPwaInstalled(true);
-    }
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleInstalled);
-    };
   }, []);
-
-  const runInstall = async () => {
-    if (!deferredPrompt) return;
-    playSynthSound('click');
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
-  };
 
   // Refresh Storage
   const refreshStorage = async () => {
@@ -797,28 +861,60 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Top Floating White Notification Toast */}
+      {alertMsg && (
+        <div className={`top-notification-banner ${alertMsg.type}`}>
+          <div className="notification-content">
+            <Bell size={16} className="notification-icon" />
+            <span>{alertMsg.text}</span>
+          </div>
+          <button className="notification-close" onClick={() => setAlertMsg(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header>
-        <div className="brand">
+        <div 
+          className="brand" 
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('downloader');
+          }}
+          style={{ cursor: 'pointer' }}
+          title="Return to Home Screen"
+        >
           <img src="/acro-logo.png" alt="Acro Logo" className="brand-logo-img" />
           <div className="brand-text">
             <h1>Acro</h1>
-            <span className="brand-subtitle">AI Model Suite</span>
+            <span className="brand-subtitle">AI Suite</span>
           </div>
         </div>
         
         <div className="header-actions">
-          {isPwaInstalled && (
-            <div className="status-badge client-badge">
-              <Check size={12} />
-              <span>Mobile Client</span>
-            </div>
-          )}
-          {deferredPrompt && (
-            <button className="btn btn-secondary install-btn" onClick={runInstall}>
-              <Smartphone size={14} /> <span>Install</span>
-            </button>
-          )}
+          <button 
+            className={`btn btn-sm ${activeTab === 'downloader' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              playSynthSound('click');
+              setActiveTab('downloader');
+            }}
+            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+          >
+            Home
+          </button>
+          
+          <button 
+            className={`btn btn-sm ${activeTab === 'animly' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              playSynthSound('click');
+              setActiveTab('animly');
+            }}
+            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+          >
+            Animly
+          </button>
+
           <button 
             className={`profile-btn-header ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => {
@@ -1103,36 +1199,7 @@ export default function App() {
       </div>
       )}
 
-      {/* Floating feedback alert */}
-      {alertMsg && (
-        <div style={{
-          position: 'fixed',
-          bottom: '2rem',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: '#1e293b',
-          color: '#f8fafc',
-          padding: '0.65rem 1.25rem',
-          borderRadius: '50px',
-          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          fontSize: '0.8rem',
-          fontWeight: 600,
-          zIndex: 100,
-          animation: 'slideUp 0.2s ease-out'
-        }}>
-          {alertMsg.type === 'success' ? (
-            <Check size={14} style={{ color: 'var(--color-emerald)' }} />
-          ) : alertMsg.type === 'error' ? (
-            <AlertCircle size={14} style={{ color: 'var(--color-rose)' }} />
-          ) : (
-            <CloudLightning size={14} style={{ color: 'var(--color-indigo)' }} />
-          )}
-          <span>{alertMsg.text}</span>
-        </div>
-      )}
+
 
       {/* Animly Web View Frame */}
       {activeTab === 'animly' && (
@@ -1545,13 +1612,9 @@ export default function App() {
                     </button>
                   </div>
                   {studentProfile.resumeType.startsWith('image/') ? (
-                    <img src={studentProfile.resumeData} alt="Resume Preview" className="resume-image-preview" />
+                    <img src={resumeBlobUrl || studentProfile.resumeData} alt="Resume Preview" className="resume-image-preview" />
                   ) : (
-                    <iframe 
-                      src={studentProfile.resumeData} 
-                      title="Resume Preview Frame" 
-                      className="resume-doc-frame"
-                    />
+                    <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
                   )}
                 </div>
 
@@ -1631,15 +1694,11 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div className="fullscreen-resume-body">
+            <div className="fullscreen-resume-body" style={{ overflowY: 'auto', padding: '1rem' }}>
               {studentProfile.resumeType.startsWith('image/') ? (
-                <img src={studentProfile.resumeData} alt="Fullscreen Resume" className="fullscreen-resume-img" />
+                <img src={resumeBlobUrl || studentProfile.resumeData} alt="Fullscreen Resume" className="fullscreen-resume-img" />
               ) : (
-                <iframe 
-                  src={studentProfile.resumeData} 
-                  title="Fullscreen Document Viewer" 
-                  className="fullscreen-resume-frame" 
-                />
+                <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
               )}
             </div>
           </div>
