@@ -1,6 +1,8 @@
 package com.proxims.app;
 
 import android.util.Log;
+import android.os.StatFs;
+import android.os.Environment;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -267,6 +269,27 @@ public class ModelDownloaderPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("deleted", deleted);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getFreeStorage(PluginCall call) {
+        try {
+            File path = Environment.getDataDirectory();
+            StatFs stat = new StatFs(path.getPath());
+            long blockSize = stat.getBlockSizeLong();
+            long availableBlocks = stat.getAvailableBlocksLong();
+            long totalBlocks = stat.getBlockCountLong();
+
+            long freeBytes = availableBlocks * blockSize;
+            long totalBytes = totalBlocks * blockSize;
+
+            JSObject ret = new JSObject();
+            ret.put("freeBytes", freeBytes);
+            ret.put("totalBytes", totalBytes);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to query native storage statistics", e);
+        }
     }
 
     private void sendProgress(String modelId, String status, long downloaded, long total) {

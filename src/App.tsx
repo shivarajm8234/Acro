@@ -38,6 +38,7 @@ interface ModelDownloaderPluginType {
   cancelDownload(options: { modelId: string }): Promise<void>;
   getModelStatus(options: { modelId: string; fileName: string }): Promise<{ status: string; size: number }>;
   deleteModel(options: { modelId: string; fileName: string }): Promise<{ deleted: boolean }>;
+  getFreeStorage(): Promise<{ freeBytes: number; totalBytes: number }>;
 }
 
 const ModelDownloader = registerPlugin<ModelDownloaderPluginType>('ModelDownloader');
@@ -415,7 +416,25 @@ export default function App() {
         }
       }
       setModelStates(states);
-      setAvailableStorage(Math.max(0, 15247134720 - totalSpaceTaken));
+      
+      try {
+        const nativeStorage = await ModelDownloader.getFreeStorage();
+        if (nativeStorage && nativeStorage.freeBytes > 0) {
+          setAvailableStorage(nativeStorage.freeBytes);
+        } else if (navigator.storage && navigator.storage.estimate) {
+          const estimate = await navigator.storage.estimate();
+          if (estimate.quota) {
+            setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
+          }
+        }
+      } catch (err) {
+        if (navigator.storage && navigator.storage.estimate) {
+          const estimate = await navigator.storage.estimate();
+          if (estimate.quota) {
+            setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
+          }
+        }
+      }
     };
 
     checkAllStatuses();
@@ -503,33 +522,31 @@ export default function App() {
     setIsRefreshingStorage(true);
     
     try {
-      if (navigator.storage && navigator.storage.estimate) {
+      // 1. Native Android Storage API call (exact real-time StatFs disk space)
+      const nativeStorage = await ModelDownloader.getFreeStorage();
+      if (nativeStorage && nativeStorage.freeBytes > 0) {
+        setAvailableStorage(nativeStorage.freeBytes);
+      } else if (navigator.storage && navigator.storage.estimate) {
         const estimate = await navigator.storage.estimate();
         if (estimate.quota) {
           const free = Math.max(0, estimate.quota - (estimate.usage || 0));
           setAvailableStorage(free);
         }
-      } else {
-        let spaceTaken = 0;
-        for (const m of MODELS) {
-          try {
-            const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
-            if (res.status === 'installed') {
-              spaceTaken += res.size;
-            }
-          } catch (e) {}
-        }
-        setAvailableStorage(Math.max(0, 18500000000 - spaceTaken));
       }
     } catch (err) {
-      // fallback
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        if (estimate.quota) {
+          setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
+        }
+      }
     }
 
     setTimeout(() => {
       setIsRefreshingStorage(false);
       playSynthSound('success');
-      triggerAlert('Device storage registers synchronized successfully.', 'success');
-    }, 500);
+      triggerAlert('Realtime device storage synchronized successfully.', 'success');
+    }, 400);
   };
 
   // Save token
