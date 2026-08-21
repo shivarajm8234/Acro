@@ -14,7 +14,14 @@ import {
   CheckCircle,
   CloudLightning,
   Smartphone,
-  Tv
+  Tv,
+  MessageSquare,
+  Send,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Mic,
+  Bot
 } from 'lucide-react';
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin } from '@capacitor/core';
@@ -98,6 +105,26 @@ interface ModelState {
   error?: string;
 }
 
+interface ChatMessage {
+  id: string;
+  sender: 'user' | 'model';
+  text: string;
+  timestamp: string;
+  stats?: {
+    speed: string;
+    time: string;
+    hardware: string;
+  };
+}
+
+// Native On-Device LLM Inference Plugin (MediaPipe)
+const LlmInference = registerPlugin('LlmInference') as {
+  loadModel(options: { modelId: string; fileName: string; useGpu: boolean }): Promise<{ loaded: boolean; modelId: string; message: string }>;
+  generateResponse(options: { prompt: string }): Promise<{ response: string; tokenCount: number; timeMs: number; modelId: string }>;
+  unloadModel(): Promise<{ unloaded: boolean }>;
+  getStatus(): Promise<{ isLoaded: boolean; loadedModelId: string; isLoading: boolean }>;
+};
+
 export default function App() {
   // Storage State
   const [availableStorage, setAvailableStorage] = useState<number>(15247134720); // ~14.2 GB
@@ -123,6 +150,22 @@ export default function App() {
       'whisper-tiny': { status: 'idle', progress: 0, downloadedBytes: 0 }
     };
   });
+
+  // Chatbot states
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatModelId, setChatModelId] = useState<string>('gemma-4-e2b-it');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      sender: 'model',
+      text: 'Hello! I am your local AI assistant. Choose an installed model from the dropdown above to start a private, offline chat session.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+  ]);
+  const [chatInput, setChatInput] = useState<string>('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [extendedThinking, setExtendedThinking] = useState<boolean>(false);
 
   // Toggles
   const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
@@ -483,6 +526,96 @@ export default function App() {
       }
     } catch (e: any) {
       triggerAlert(`Deletion failed: ${e.message}`, 'error');
+    }
+  };
+
+  // Chat messaging handler — runs 100% on-device via native MediaPipe LlmInference
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    const model = MODELS.find(m => m.id === chatModelId);
+    if (!model) {
+      triggerAlert('Selected model not found.', 'error');
+      return;
+    }
+
+    // Check if model file is downloaded
+    const modelState = modelStates[chatModelId];
+    const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
+
+    if (!isDownloaded) {
+      triggerAlert(`${model.name} is not downloaded. Please download it first from the AI Downloader tab.`, 'error');
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      sender: 'user',
+      text: chatInput.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsTyping(true);
+    playSynthSound('click');
+
+    try {
+      // Step 1: Check if model is loaded in native RAM
+      const status = await LlmInference.getStatus();
+
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        // Load model into device RAM
+        triggerAlert(`Loading ${model.name} into device RAM...`, 'info');
+
+        const useGpu = chatModelId === 'gemma-2b-it-gpu-int4' && gpuDelegateEnabled;
+        const loadResult = await LlmInference.loadModel({
+          modelId: chatModelId,
+          fileName: model.fileName,
+          useGpu
+        });
+
+        if (!loadResult.loaded) {
+          throw new Error('Failed to load model into RAM.');
+        }
+
+        triggerAlert(`${model.name} loaded. Running inference...`, 'info');
+      }
+
+      // Step 2: Run on-device inference
+      const result = await LlmInference.generateResponse({
+        prompt: userMessage.text
+      });
+
+      const timeSec = result.timeMs / 1000;
+      const tokPerSec = result.tokenCount > 0 ? (result.tokenCount / timeSec).toFixed(1) : '—';
+
+      const modelMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'model',
+        text: result.response || 'No response generated.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        stats: {
+          speed: `${tokPerSec} tok/s`,
+          time: `${timeSec.toFixed(1)}s`,
+          hardware: `On-Device (${chatModelId.includes('gpu') ? 'GPU' : 'CPU'})`
+        }
+      };
+
+      setChatMessages(prev => [...prev, modelMessage]);
+      playSynthSound('success');
+    } catch (err: any) {
+      console.error('On-device inference error:', err);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'model',
+        text: `⚠️ On-device inference failed: ${err.message || 'Unknown error'}. Make sure the model is fully downloaded and try again.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
+      triggerAlert('Local inference failed. Check model file integrity.', 'error');
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -856,6 +989,206 @@ export default function App() {
           <span>Animly Web</span>
         </button>
       </nav>
+
+      {/* Floating Action Button (FAB) for Chatbot */}
+      <button 
+        className={`chatbot-fab ${isChatOpen ? 'chat-open' : ''}`}
+        onClick={() => {
+          playSynthSound('click');
+          setIsChatOpen(prev => !prev);
+          setIsDropdownOpen(false);
+        }}
+        aria-label="Toggle Local AI Chatbot"
+      >
+        {isChatOpen ? <X size={24} /> : <MessageSquare size={24} />}
+      </button>
+
+      {/* Floating Chatbot Window */}
+      {isChatOpen && (
+        <div className="chatbot-window">
+          {/* Chat Header */}
+          <div className="chat-header">
+            <div className="model-selector-container">
+              <button 
+                className="model-selector-btn"
+                onClick={() => setIsDropdownOpen(prev => !prev)}
+              >
+                <Bot size={16} />
+                <span>{MODELS.find(m => m.id === chatModelId)?.name || 'Select Model'}</span>
+                {isDropdownOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              {/* Model Dropdown Menu */}
+              {isDropdownOpen && (
+                <div className="model-dropdown">
+                  {MODELS.map(m => {
+                    const isInstalled = modelStates[m.id]?.status === 'installed' || modelStates[m.id]?.status === 'loaded';
+                    return (
+                      <button
+                        key={m.id}
+                        className={`model-dropdown-item ${chatModelId === m.id ? 'selected' : ''}`}
+                        onClick={() => {
+                          playSynthSound('click');
+                          setChatModelId(m.id);
+                          setIsDropdownOpen(false);
+                          // Reset welcome message on model switch
+                          setChatMessages([
+                            {
+                              id: 'welcome',
+                              sender: 'model',
+                              text: `Hello! I am your local ${m.name} assistant. ${isInstalled ? 'I am fully downloaded and ready for offline inference.' : 'Note: I am not downloaded yet. Please download me via the AI Downloader tab.'}`,
+                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            }
+                          ]);
+                        }}
+                      >
+                        {chatModelId === m.id && <Check size={14} className="model-item-check" />}
+                        <div className="model-item-info" style={{ marginLeft: chatModelId === m.id ? '0' : '1.25rem' }}>
+                          <span className="model-item-name">{m.name}</span>
+                          <span className="model-item-desc">{m.displaySize} • {m.id === 'whisper-tiny' ? 'Speech Encoder' : 'Instruct LLM'}</span>
+                        </div>
+                        <span className={`model-item-badge ${isInstalled ? 'installed' : 'missing'}`}>
+                          {isInstalled ? 'Installed' : 'Missing'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="dropdown-divider"></div>
+                  <button 
+                    className="extended-thinking-item"
+                    onClick={() => {
+                      playSynthSound('click');
+                      setExtendedThinking(prev => !prev);
+                      setIsDropdownOpen(false);
+                    }}
+                  >
+                    <span style={{ fontSize: '0.85rem' }}>🧠 Extended Thinking (CoT)</span>
+                    <span style={{ color: extendedThinking ? '#818cf8' : '#64748b' }}>
+                      {extendedThinking ? 'Active' : 'Off'}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button 
+              className="chat-close-btn"
+              onClick={() => {
+                playSynthSound('click');
+                setIsChatOpen(false);
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Chat Messages */}
+          <div className="chat-messages">
+            {chatMessages.map(msg => (
+              <div key={msg.id} className={`chat-message-row ${msg.sender}`}>
+                <div className="chat-bubble">
+                  {msg.text.split('\n').map((line, idx) => {
+                    if (line.startsWith('> ')) {
+                      return <div key={idx} style={{ color: '#94a3b8', fontStyle: 'italic', paddingLeft: '0.5rem', borderLeft: '2px solid rgba(255,255,255,0.2)', margin: '0.2rem 0' }}>{line.slice(2)}</div>;
+                    }
+                    if (line.startsWith('```python') || line.startsWith('```')) {
+                      return null; // Handle basic styling below
+                    }
+                    return <div key={idx}>{line}</div>;
+                  })}
+                  
+                  {/* Basic Code block simulator inside chats */}
+                  {msg.text.includes('```python') && (
+                    <pre>
+                      <code>
+                        {msg.text.split('```python')[1]?.split('```')[0]?.trim()}
+                      </code>
+                    </pre>
+                  )}
+
+                  <div className="chat-message-meta">
+                    <span>{msg.timestamp}</span>
+                    {msg.stats && (
+                      <span className="inference-badge">
+                        {msg.stats.speed} • {msg.stats.hardware}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Typing indicator */}
+            {isTyping && (
+              <div className="chat-message-row model">
+                <div className="chat-typing-indicator">
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Warning Banner if selected model is not downloaded */}
+          {(() => {
+            const isInstalled = modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded';
+            if (!isInstalled) {
+              return (
+                <div className="chat-warning-banner">
+                  <span>⚠️ Download this model to enable on-device AI inference (no internet needed).</span>
+                  <button 
+                    className="chat-warning-link"
+                    onClick={() => {
+                      playSynthSound('click');
+                      setActiveTab('downloader');
+                      setIsChatOpen(false);
+                    }}
+                  >
+                    Go to AI Downloader →
+                  </button>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {/* Chat Input Bar */}
+          <div className="chat-input-container">
+            <button 
+              className="chat-mic-btn"
+              onClick={() => {
+                playSynthSound('click');
+                triggerAlert('Voice input requires Whisper Tiny activation.', 'info');
+              }}
+              title="Voice Input"
+            >
+              <Mic size={18} />
+            </button>
+            <input 
+              type="text" 
+              className="chat-text-input"
+              placeholder={modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded' ? "Ask anything (on-device)..." : "Download model first..."}
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSendMessage();
+                }
+              }}
+              disabled={!(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
+            />
+            <button 
+              className="chat-send-btn"
+              onClick={handleSendMessage}
+              disabled={!chatInput.trim() || isTyping || !(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
+              aria-label="Send Message"
+            >
+              <Send size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
