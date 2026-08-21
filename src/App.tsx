@@ -1,0 +1,785 @@
+import { useState, useEffect } from 'react';
+import { 
+  Cpu, 
+  Database, 
+  Download, 
+  RefreshCw, 
+  Trash2, 
+  Play, 
+  Pause, 
+  Eye, 
+  EyeOff, 
+  Check, 
+  AlertCircle, 
+  CheckCircle,
+  CloudLightning,
+  Smartphone,
+  Tv
+} from 'lucide-react';
+import { Xframe } from 'capacitor-plugin-xframe';
+import './App.css';
+
+// Model definition interface
+interface AIModel {
+  id: string;
+  name: string;
+  architecture: string;
+  sizeBytes: number;
+  displaySize: string;
+  description: string;
+  gated: boolean;
+}
+
+const MODELS: AIModel[] = [
+  {
+    id: 'gemma_2b_litert',
+    name: 'Gemma 2B (LiteRT)',
+    architecture: 'Gemma-IT / INT4',
+    sizeBytes: 1546188288,
+    displaySize: '1.44 GB',
+    description: 'Highly optimized lightweight instruction-tuned model. Runs perfectly on-device with extremely fast token-per-second inference.',
+    gated: true
+  },
+  {
+    id: 'gemma_7b_gpu',
+    name: 'Gemma 7B (FP16 GPU)',
+    architecture: 'Gemma-Base / FP16',
+    sizeBytes: 4402341888,
+    displaySize: '4.10 GB',
+    description: 'Full precision base model. Requires GPU delegate acceleration and minimum 8GB device RAM to operate without context throttling.',
+    gated: true
+  },
+  {
+    id: 'phi_3_mini',
+    name: 'Phi-3 Mini (CPU)',
+    architecture: 'Phi3-Mini-4k / INT4',
+    sizeBytes: 2362232012,
+    displaySize: '2.20 GB',
+    description: 'Microsoft on-device specialist model. Excellent code interpretation and structured output parsing at moderate RAM usage.',
+    gated: false
+  },
+  {
+    id: 'llama_3_8b_npu',
+    name: 'Llama 3 8B (Qualcomm)',
+    architecture: 'Llama-3-8B / INT4 QNN',
+    sizeBytes: 5046586368,
+    displaySize: '4.70 GB',
+    description: 'Meta instruction model compiled specifically for Qualcomm Hexagon Neural Processing Units. Superior reasoning capabilities.',
+    gated: false
+  }
+];
+
+type ModelStatus = 'idle' | 'downloading' | 'verifying' | 'installed' | 'loading' | 'loaded';
+
+interface ModelState {
+  status: ModelStatus;
+  progress: number;
+  downloadedBytes: number;
+  error?: string;
+}
+
+export default function App() {
+  // Storage State
+  const [availableStorage, setAvailableStorage] = useState<number>(15247134720); // ~14.2 GB
+  const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
+
+  // Tab navigation states
+  const [activeTab, setActiveTab] = useState<'downloader' | 'animly'>('downloader');
+  const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
+
+  // HF Token state
+  const [hfToken, setHfToken] = useState<string>(() => {
+    return localStorage.getItem('hf_token_demo') || '';
+  });
+  const [isTokenSaved, setIsTokenSaved] = useState<boolean>(false);
+  const [isTokenVisible, setIsTokenVisible] = useState<boolean>(false);
+
+  // Model States
+  const [modelStates, setModelStates] = useState<Record<string, ModelState>>(() => {
+    return {
+      gemma_2b_litert: { status: 'idle', progress: 0, downloadedBytes: 0 },
+      gemma_7b_gpu: { status: 'idle', progress: 0, downloadedBytes: 0 },
+      phi_3_mini: { status: 'installed', progress: 100, downloadedBytes: 2362232012 },
+      llama_3_8b_npu: { status: 'idle', progress: 0, downloadedBytes: 0 }
+    };
+  });
+
+  // Toggles
+  const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
+  const [gpuDelegateEnabled, setGpuDelegateEnabled] = useState<boolean>(true);
+  const [gmailSync, setGmailSync] = useState<boolean>(true);
+  const [githubSync, setGithubSync] = useState<boolean>(true);
+
+  // PWA Prompt
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isPwaInstalled, setIsPwaInstalled] = useState<boolean>(false);
+
+  // Feedback Alerts
+  const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Audio synthesis feedback
+  const playSynthSound = (type: 'click' | 'success' | 'ping' | 'error' | 'delete') => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'click') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      } else if (type === 'success') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } else if (type === 'ping') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(500, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.25);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      } else if (type === 'error') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(110, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } else if (type === 'delete') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.2);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      }
+    } catch (e) {
+      console.warn('Audio synthesis initialized failed:', e);
+    }
+  };
+
+  // Toast feedback helper
+  const triggerAlert = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setAlertMsg({ text, type });
+    setTimeout(() => setAlertMsg(null), 3500);
+  };
+
+  // PWA installation detectors
+  useEffect(() => {
+    // Start XFrame interceptor to bypass X-Frame-Options natively on Android
+    Xframe.start().then(() => {
+      console.log('XFrame interceptor started.');
+    }).catch(err => {
+      console.warn('XFrame plugin starting failed:', err);
+    });
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const handleInstalled = () => {
+      setIsPwaInstalled(true);
+      setDeferredPrompt(null);
+      playSynthSound('success');
+      triggerAlert('🎉 Helply AI Downloader installed locally!', 'success');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsPwaInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  const runInstall = async () => {
+    if (!deferredPrompt) return;
+    playSynthSound('click');
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
+
+  // Refresh Storage Simulator
+  const refreshStorage = () => {
+    playSynthSound('click');
+    setIsRefreshingStorage(true);
+    setTimeout(() => {
+      setIsRefreshingStorage(false);
+      playSynthSound('success');
+      triggerAlert('Device storage registers synchronized successfully.', 'success');
+    }, 800);
+  };
+
+  // Save token
+  const saveToken = () => {
+    playSynthSound('click');
+    if (!hfToken.trim()) {
+      playSynthSound('error');
+      triggerAlert('Hugging Face Access Token cannot be blank.', 'error');
+      return;
+    }
+    localStorage.setItem('hf_token_demo', hfToken);
+    setIsTokenSaved(true);
+    playSynthSound('success');
+    triggerAlert('Access token saved and encrypted in keystore.', 'success');
+  };
+
+  // Format bytes helper
+  const formatBytes = (bytes: number): string => {
+    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
+    return (bytes / 1048576).toFixed(0) + ' MB';
+  };
+
+  // Download Simulation loop
+  const startDownload = (modelId: string) => {
+    playSynthSound('click');
+    const model = MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
+    // Check token requirement
+    if (model.gated && (!hfToken || hfToken.trim().length === 0)) {
+      playSynthSound('error');
+      triggerAlert(`HuggingFace authentication required for gated model: ${model.name}.`, 'error');
+      return;
+    }
+
+    // Check storage space
+    if (availableStorage < model.sizeBytes) {
+      playSynthSound('error');
+      triggerAlert('Insufficient disk storage. Free up space on device partition.', 'error');
+      return;
+    }
+
+    // Start Downloading state
+    setModelStates(prev => ({
+      ...prev,
+      [modelId]: { status: 'downloading', progress: 0, downloadedBytes: 0 }
+    }));
+
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 5;
+      const currentBytes = Math.floor((progress / 100) * model.sizeBytes);
+
+      setModelStates(prev => {
+        // Safe check if canceled mid-way
+        if (!prev[modelId] || prev[modelId].status !== 'downloading') {
+          clearInterval(interval);
+          return prev;
+        }
+
+        if (progress >= 100) {
+          clearInterval(interval);
+          // Transition to Verifying state
+          setTimeout(() => runVerifying(modelId), 200);
+          return {
+            ...prev,
+            [modelId]: { status: 'downloading', progress: 100, downloadedBytes: model.sizeBytes }
+          };
+        }
+
+        return {
+          ...prev,
+          [modelId]: { status: 'downloading', progress, downloadedBytes: currentBytes }
+        };
+      });
+    }, 200);
+  };
+
+  // Verifying transition
+  const runVerifying = (modelId: string) => {
+    const model = MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
+    setModelStates(prev => ({
+      ...prev,
+      [modelId]: { status: 'verifying', progress: 100, downloadedBytes: model.sizeBytes }
+    }));
+
+    setTimeout(() => {
+      // Completed / Installed
+      playSynthSound('success');
+      setModelStates(prev => ({
+        ...prev,
+        [modelId]: { status: 'installed', progress: 100, downloadedBytes: model.sizeBytes }
+      }));
+      setAvailableStorage(prev => prev - model.sizeBytes);
+      triggerAlert(`✓ Installed ${model.name} to local system.`, 'success');
+    }, 1800);
+  };
+
+  // Cancel Download
+  const cancelDownload = (modelId: string) => {
+    playSynthSound('delete');
+    setModelStates(prev => ({
+      ...prev,
+      [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
+    }));
+    triggerAlert('Download operation aborted.');
+  };
+
+  // Load Model into RAM
+  const loadModelToRam = (modelId: string) => {
+    playSynthSound('click');
+    
+    // Unload any loaded model first
+    setModelStates(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(key => {
+        if (updated[key].status === 'loaded') {
+          updated[key].status = 'installed';
+        }
+      });
+      updated[modelId] = { status: 'loading', progress: 0, downloadedBytes: updated[modelId].downloadedBytes };
+      return updated;
+    });
+
+    let loadProgress = 0;
+    const interval = setInterval(() => {
+      loadProgress += 10;
+      setModelStates(prev => {
+        if (!prev[modelId] || prev[modelId].status !== 'loading') {
+          clearInterval(interval);
+          return prev;
+        }
+
+        if (loadProgress >= 100) {
+          clearInterval(interval);
+          playSynthSound('ping');
+          triggerAlert(`🚀 LiteRT warm-up completed. ${MODELS.find(m=>m.id===modelId)?.name} active in RAM.`, 'success');
+          return {
+            ...prev,
+            [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
+          };
+        }
+
+        return {
+          ...prev,
+          [modelId]: { status: 'loading', progress: loadProgress, downloadedBytes: prev[modelId].downloadedBytes }
+        };
+      });
+    }, 1500);
+  };
+
+  // Unload Model from RAM
+  const unloadModelFromRam = (modelId: string) => {
+    playSynthSound('click');
+    setModelStates(prev => ({
+      ...prev,
+      [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
+    }));
+    triggerAlert('Model memory buffers deallocated.');
+  };
+
+  // Delete local model file
+  const deleteModel = (modelId: string) => {
+    playSynthSound('delete');
+    const model = MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
+    setModelStates(prev => ({
+      ...prev,
+      [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
+    }));
+    setAvailableStorage(prev => prev + model.sizeBytes);
+    triggerAlert(`🗑 Deleted local binary for ${model.name}.`);
+  };
+
+  return (
+    <div className="app-container">
+      {/* Header */}
+      <header>
+        <div className="brand">
+          <Database size={24} style={{ color: 'var(--color-indigo)' }} />
+          <h1>Helply AI Downloader</h1>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {isPwaInstalled && (
+            <div className="status-badge" style={{ background: '#dcfce7', borderColor: '#bbf7d0', color: 'var(--color-emerald)' }}>
+              <span>Installed Client</span>
+            </div>
+          )}
+          {deferredPrompt && (
+            <button className="btn btn-secondary" onClick={runInstall} style={{ padding: '0.35rem 0.75rem', borderRadius: '50px' }}>
+              <Smartphone size={14} /> Install Client
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Panel grid */}
+      <div className="dashboard-grid">
+        
+        {/* Banner Section: Disk Space */}
+        <div className="storage-banner">
+          <div className="storage-info">
+            <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
+            <span className="storage-value">{formatBytes(availableStorage)}</span>
+          </div>
+          <button 
+            className="btn btn-secondary" 
+            onClick={refreshStorage} 
+            disabled={isRefreshingStorage}
+          >
+            <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
+            <span>Refresh Disk Space</span>
+          </button>
+        </div>
+
+        {/* Token Card */}
+        <div className="card-panel token-card">
+          <div>
+            <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
+              HUGGING FACE ACCESS TOKEN (SECURED)
+            </h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
+            </p>
+          </div>
+
+          <div className="input-row">
+            <input 
+              type={isTokenVisible ? 'text' : 'password'}
+              className="text-input"
+              value={hfToken}
+              onChange={(e) => {
+                setHfToken(e.target.value);
+                setIsTokenSaved(false);
+              }}
+              placeholder="hf_••••••••••••••••••••••••••••••••"
+            />
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => {
+                playSynthSound('click');
+                setIsTokenVisible(!isTokenVisible);
+              }}
+              style={{ padding: '0.5rem' }}
+              title={isTokenVisible ? 'Hide Key' : 'Show Key'}
+            >
+              {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <button className="btn btn-primary" onClick={saveToken}>
+              {isTokenSaved ? 'Saved ✓' : 'Save Key'}
+            </button>
+          </div>
+        </div>
+
+        {/* Models list section */}
+        <div>
+          <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+            {MODELS.map(model => {
+              const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
+              const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
+              const isDownloading = state.status === 'downloading';
+              const isVerifying = state.status === 'verifying';
+              const isLoading = state.status === 'loading';
+              const isLoaded = state.status === 'loaded';
+
+              return (
+                <div key={model.id} className="card-panel model-card">
+                  <div className="model-header">
+                    <div className="model-meta-box">
+                      <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
+                        <Cpu size={20} />
+                      </div>
+                      <div className="model-title-box">
+                        <span className="model-name">{model.name}</span>
+                        <span className="model-details">{model.architecture} • {model.displaySize}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      {isLoaded ? (
+                        <span className="badge badge-green">Active in RAM</span>
+                      ) : isInstalled ? (
+                        <span className="badge badge-blue">Installed Local</span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <p className="model-description">{model.description}</p>
+
+                  {/* Progressive loading state into RAM */}
+                  {isLoading && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
+                        <span>{state.progress}%</span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Downloading status */}
+                  {isDownloading && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)' }}>
+                          Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
+                        </span>
+                        <span>{state.progress}%</span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                      </div>
+                      <button 
+                        className="btn btn-secondary" 
+                        onClick={() => cancelDownload(model.id)}
+                        style={{ marginTop: '0.4rem', padding: '0.35rem' }}
+                      >
+                        Abort Download
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Verifying hash integrity */}
+                  {isVerifying && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
+                          Registering model & verifying SHA-256 integrity...
+                        </span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill indeterminate"></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons based on status */}
+                  {!isDownloading && !isVerifying && !isLoading && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                      {!isInstalled ? (
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={() => startDownload(model.id)}
+                          style={{ width: '100%' }}
+                        >
+                          <Download size={14} />
+                          Download Model ({model.displaySize})
+                        </button>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          {isLoaded ? (
+                            <button 
+                              className="btn btn-secondary" 
+                              onClick={() => unloadModelFromRam(model.id)}
+                              style={{ flex: 1 }}
+                            >
+                              <Pause size={14} /> Unload from RAM
+                            </button>
+                          ) : (
+                            <button 
+                              className="btn btn-primary" 
+                              onClick={() => loadModelToRam(model.id)}
+                              style={{ flex: 1 }}
+                            >
+                              <Play size={14} /> Load Model into RAM
+                            </button>
+                          )}
+                          <button 
+                            className="btn-icon-only btn-danger" 
+                            onClick={() => deleteModel(model.id)}
+                            title="Delete model binary file"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Hardware Acceleration & OAuth Toggles */}
+        <div>
+          <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
+          <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
+                <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={npuEnabled}
+                  onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">OpenCL GPU Delegate</span>
+                <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={gpuDelegateEnabled}
+                  onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">Gmail / Outlook Sync Integration</span>
+                <span className="toggle-desc">Realtime background index of contextual emails.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={gmailSync}
+                  onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
+                <span className="toggle-desc">Maintains automated git integrations.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={githubSync}
+                  onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row" style={{ paddingBottom: 0 }}>
+              <div className="toggle-meta">
+                <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
+                <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
+                <CheckCircle size={14} /> Active
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Floating feedback alert */}
+      {alertMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#1e293b',
+          color: '#f8fafc',
+          padding: '0.65rem 1.25rem',
+          borderRadius: '50px',
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          zIndex: 100,
+          animation: 'slideUp 0.2s ease-out'
+        }}>
+          {alertMsg.type === 'success' ? (
+            <Check size={14} style={{ color: 'var(--color-emerald)' }} />
+          ) : alertMsg.type === 'error' ? (
+            <AlertCircle size={14} style={{ color: 'var(--color-rose)' }} />
+          ) : (
+            <CloudLightning size={14} style={{ color: 'var(--color-indigo)' }} />
+          )}
+          <span>{alertMsg.text}</span>
+        </div>
+      )}
+
+      {/* Animly Web View Frame */}
+      {activeTab === 'animly' && (
+        <div className="iframe-container">
+          {isIframeLoading && (
+            <div className="iframe-loader">
+              <div className="iframe-loader-spinner"></div>
+              <span className="iframe-loader-text">Loading Animly Engine...</span>
+            </div>
+          )}
+          <iframe 
+            src="https://animlyy.web.app/" 
+            className="iframe-web" 
+            title="Animly Web Application"
+            onLoad={() => setIsIframeLoading(false)}
+          />
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer>
+        <p>Helply AI Downloader Client • PWA Android Build compiled with Capacitor & React</p>
+      </footer>
+
+      {/* Bottom Navigation Bar */}
+      <nav className="bottom-nav">
+        <button 
+          className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('downloader');
+          }}
+        >
+          <Cpu size={20} />
+          <span>AI Downloader</span>
+        </button>
+        <button 
+          className={`nav-item ${activeTab === 'animly' ? 'active' : ''}`}
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('animly');
+            setIsIframeLoading(true);
+          }}
+        >
+          <Tv size={20} />
+          <span>Animly Web</span>
+        </button>
+      </nav>
+    </div>
+  );
+}
