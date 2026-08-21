@@ -17,7 +17,17 @@ import {
   Tv
 } from 'lucide-react';
 import { Xframe } from 'capacitor-plugin-xframe';
+import { registerPlugin } from '@capacitor/core';
 import './App.css';
+
+interface ModelDownloaderPluginType {
+  startDownload(options: { modelId: string; url: string; hfToken?: string; fileName: string; sizeBytes: number }): Promise<void>;
+  cancelDownload(options: { modelId: string }): Promise<void>;
+  getModelStatus(options: { modelId: string; fileName: string }): Promise<{ status: string; size: number }>;
+  deleteModel(options: { modelId: string; fileName: string }): Promise<{ deleted: boolean }>;
+}
+
+const ModelDownloader = registerPlugin<ModelDownloaderPluginType>('ModelDownloader');
 
 // Model definition interface
 interface AIModel {
@@ -28,44 +38,54 @@ interface AIModel {
   displaySize: string;
   description: string;
   gated: boolean;
+  downloadUrl: string;
+  fileName: string;
 }
 
 const MODELS: AIModel[] = [
   {
-    id: 'gemma_2b_litert',
-    name: 'Gemma 2B (LiteRT)',
-    architecture: 'Gemma-IT / INT4',
-    sizeBytes: 1546188288,
-    displaySize: '1.44 GB',
-    description: 'Highly optimized lightweight instruction-tuned model. Runs perfectly on-device with extremely fast token-per-second inference.',
-    gated: true
+    id: 'gemma-4-e2b-it',
+    name: 'Gemma 4 E2B IT (v1.1 CPU)',
+    architecture: 'Google Gemma 1.1 2B INT4 (MediaPipe LLM)',
+    sizeBytes: 1346427328,
+    displaySize: '1.25 GB',
+    description: 'Google Gemma 1.1 2B Instruct CPU model for fast offline student query resolution.',
+    gated: false,
+    downloadUrl: 'https://huggingface.co/innermost47/gemma-2b-it-int4-mediapipe/resolve/main/gemma-1.1-2b-it-cpu-int4.bin',
+    fileName: 'gemma-4-e2b-it.bin'
   },
   {
-    id: 'gemma_7b_gpu',
-    name: 'Gemma 7B (FP16 GPU)',
-    architecture: 'Gemma-Base / FP16',
-    sizeBytes: 4402341888,
-    displaySize: '4.10 GB',
-    description: 'Full precision base model. Requires GPU delegate acceleration and minimum 8GB device RAM to operate without context throttling.',
-    gated: true
+    id: 'gemma-2b-it-v1-cpu',
+    name: 'Gemma 2B IT (v1.0 Standard)',
+    architecture: 'Google Gemma 1.0 2B INT4 (MediaPipe LLM)',
+    sizeBytes: 1346427328,
+    displaySize: '1.25 GB',
+    description: 'Official Google Gemma 1.0 2B Instruct model for offline reasoning.',
+    gated: true,
+    downloadUrl: 'https://huggingface.co/google/gemma-2b-it-tflite/resolve/main/gemma-2b-it-cpu-int4.bin',
+    fileName: 'gemma-2b-it-v1-cpu.bin'
   },
   {
-    id: 'phi_3_mini',
-    name: 'Phi-3 Mini (CPU)',
-    architecture: 'Phi3-Mini-4k / INT4',
-    sizeBytes: 2362232012,
-    displaySize: '2.20 GB',
-    description: 'Microsoft on-device specialist model. Excellent code interpretation and structured output parsing at moderate RAM usage.',
-    gated: false
+    id: 'gemma-2b-it-gpu-int4',
+    name: 'Gemma 2B IT (GPU INT4)',
+    architecture: 'Google Gemma 2B GPU INT4 (MediaPipe LLM)',
+    sizeBytes: 1354301440,
+    displaySize: '1.26 GB',
+    description: 'Google Gemma 2B GPU-optimized INT4 model for high-throughput local inference.',
+    gated: true,
+    downloadUrl: 'https://huggingface.co/google/gemma-2b-it-tflite/resolve/main/gemma-2b-it-gpu-int4.bin',
+    fileName: 'gemma-2b-it-gpu-int4.bin'
   },
   {
-    id: 'llama_3_8b_npu',
-    name: 'Llama 3 8B (Qualcomm)',
-    architecture: 'Llama-3-8B / INT4 QNN',
-    sizeBytes: 5046586368,
-    displaySize: '4.70 GB',
-    description: 'Meta instruction model compiled specifically for Qualcomm Hexagon Neural Processing Units. Superior reasoning capabilities.',
-    gated: false
+    id: 'whisper-tiny',
+    name: 'Whisper Tiny',
+    architecture: 'Speech-to-Text Encoder (Open-Access)',
+    sizeBytes: 151061672,
+    displaySize: '144 MB',
+    description: 'On-device voice command recognition and lecture note audio parsing.',
+    gated: false,
+    downloadUrl: 'https://huggingface.co/openai/whisper-tiny/resolve/main/model.safetensors',
+    fileName: 'whisper-tiny.bin'
   }
 ];
 
@@ -89,7 +109,7 @@ export default function App() {
 
   // HF Token state
   const [hfToken, setHfToken] = useState<string>(() => {
-    return localStorage.getItem('hf_token_demo') || '';
+    return localStorage.getItem('hf_token_demo') || import.meta.env.VITE_HF_TOKEN || '';
   });
   const [isTokenSaved, setIsTokenSaved] = useState<boolean>(false);
   const [isTokenVisible, setIsTokenVisible] = useState<boolean>(false);
@@ -97,10 +117,10 @@ export default function App() {
   // Model States
   const [modelStates, setModelStates] = useState<Record<string, ModelState>>(() => {
     return {
-      gemma_2b_litert: { status: 'idle', progress: 0, downloadedBytes: 0 },
-      gemma_7b_gpu: { status: 'idle', progress: 0, downloadedBytes: 0 },
-      phi_3_mini: { status: 'installed', progress: 100, downloadedBytes: 2362232012 },
-      llama_3_8b_npu: { status: 'idle', progress: 0, downloadedBytes: 0 }
+      'gemma-4-e2b-it': { status: 'idle', progress: 0, downloadedBytes: 0 },
+      'gemma-2b-it-v1-cpu': { status: 'idle', progress: 0, downloadedBytes: 0 },
+      'gemma-2b-it-gpu-int4': { status: 'idle', progress: 0, downloadedBytes: 0 },
+      'whisper-tiny': { status: 'idle', progress: 0, downloadedBytes: 0 }
     };
   });
 
@@ -181,6 +201,66 @@ export default function App() {
     setTimeout(() => setAlertMsg(null), 3500);
   };
 
+  // Check models native status on load
+  useEffect(() => {
+    const checkAllStatuses = async () => {
+      const states: Record<string, ModelState> = {};
+      let totalSpaceTaken = 0;
+      for (const m of MODELS) {
+        try {
+          const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
+          if (res.status === 'installed') {
+            states[m.id] = { status: 'installed', progress: 100, downloadedBytes: res.size };
+            totalSpaceTaken += res.size;
+          } else if (res.status === 'downloading') {
+            states[m.id] = { status: 'downloading', progress: Math.round((res.size / m.sizeBytes) * 100), downloadedBytes: res.size };
+          } else {
+            states[m.id] = { status: 'idle', progress: 0, downloadedBytes: 0 };
+          }
+        } catch (e) {
+          states[m.id] = { status: 'idle', progress: 0, downloadedBytes: 0 };
+        }
+      }
+      setModelStates(states);
+      setAvailableStorage(Math.max(0, 15247134720 - totalSpaceTaken));
+    };
+
+    checkAllStatuses();
+  }, []);
+
+  // Listen to native download progress events
+  useEffect(() => {
+    const listener = (ModelDownloader as any).addListener('downloadProgress', (data: any) => {
+      const { modelId, status, downloadedBytes, progress, error } = data;
+      
+      setModelStates(prev => ({
+        ...prev,
+        [modelId]: {
+          status: status as any,
+          progress: progress || 0,
+          downloadedBytes: downloadedBytes || 0,
+          error
+        }
+      }));
+
+      if (status === 'installed') {
+        playSynthSound('success');
+        triggerAlert(`Installed ${MODELS.find(m => m.id === modelId)?.name} to local system.`, 'success');
+        const model = MODELS.find(m => m.id === modelId);
+        if (model) {
+          setAvailableStorage(prev => Math.max(0, prev - model.sizeBytes));
+        }
+      } else if (status === 'error') {
+        playSynthSound('error');
+        triggerAlert(`Download failed: ${error}`, 'error');
+      }
+    });
+
+    return () => {
+      listener.then((l: { remove: () => void }) => l.remove());
+    };
+  }, []);
+
   // PWA installation detectors
   useEffect(() => {
     // Start XFrame interceptor to bypass X-Frame-Options natively on Android
@@ -225,11 +305,26 @@ export default function App() {
   };
 
   // Refresh Storage Simulator
-  const refreshStorage = () => {
+  const refreshStorage = async () => {
     playSynthSound('click');
     setIsRefreshingStorage(true);
+    
+    // Sync storage space based on actual files present on disk
+    let spaceTaken = 0;
+    for (const m of MODELS) {
+      try {
+        const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
+        if (res.status === 'installed') {
+          spaceTaken += res.size;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     setTimeout(() => {
       setIsRefreshingStorage(false);
+      setAvailableStorage(15247134720 - spaceTaken);
       playSynthSound('success');
       triggerAlert('Device storage registers synchronized successfully.', 'success');
     }, 800);
@@ -255,8 +350,8 @@ export default function App() {
     return (bytes / 1048576).toFixed(0) + ' MB';
   };
 
-  // Download Simulation loop
-  const startDownload = (modelId: string) => {
+  // Trigger native downloader
+  const startDownload = async (modelId: string) => {
     playSynthSound('click');
     const model = MODELS.find(m => m.id === modelId);
     if (!model) return;
@@ -281,66 +376,38 @@ export default function App() {
       [modelId]: { status: 'downloading', progress: 0, downloadedBytes: 0 }
     }));
 
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 5;
-      const currentBytes = Math.floor((progress / 100) * model.sizeBytes);
-
-      setModelStates(prev => {
-        // Safe check if canceled mid-way
-        if (!prev[modelId] || prev[modelId].status !== 'downloading') {
-          clearInterval(interval);
-          return prev;
-        }
-
-        if (progress >= 100) {
-          clearInterval(interval);
-          // Transition to Verifying state
-          setTimeout(() => runVerifying(modelId), 200);
-          return {
-            ...prev,
-            [modelId]: { status: 'downloading', progress: 100, downloadedBytes: model.sizeBytes }
-          };
-        }
-
-        return {
-          ...prev,
-          [modelId]: { status: 'downloading', progress, downloadedBytes: currentBytes }
-        };
+    try {
+      await ModelDownloader.startDownload({
+        modelId: model.id,
+        url: model.downloadUrl,
+        hfToken: hfToken || '',
+        fileName: model.fileName,
+        sizeBytes: model.sizeBytes
       });
-    }, 200);
-  };
-
-  // Verifying transition
-  const runVerifying = (modelId: string) => {
-    const model = MODELS.find(m => m.id === modelId);
-    if (!model) return;
-
-    setModelStates(prev => ({
-      ...prev,
-      [modelId]: { status: 'verifying', progress: 100, downloadedBytes: model.sizeBytes }
-    }));
-
-    setTimeout(() => {
-      // Completed / Installed
-      playSynthSound('success');
+      triggerAlert(`Download initialized for ${model.name}.`);
+    } catch (e: any) {
+      playSynthSound('error');
       setModelStates(prev => ({
         ...prev,
-        [modelId]: { status: 'installed', progress: 100, downloadedBytes: model.sizeBytes }
+        [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0, error: e.message }
       }));
-      setAvailableStorage(prev => prev - model.sizeBytes);
-      triggerAlert(`✓ Installed ${model.name} to local system.`, 'success');
-    }, 1800);
+      triggerAlert(`Failed to start download: ${e.message}`, 'error');
+    }
   };
 
-  // Cancel Download
-  const cancelDownload = (modelId: string) => {
+  // Cancel native download
+  const cancelDownload = async (modelId: string) => {
     playSynthSound('delete');
-    setModelStates(prev => ({
-      ...prev,
-      [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
-    }));
-    triggerAlert('Download operation aborted.');
+    try {
+      await ModelDownloader.cancelDownload({ modelId });
+      setModelStates(prev => ({
+        ...prev,
+        [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
+      }));
+      triggerAlert('Download operation aborted.');
+    } catch (e: any) {
+      triggerAlert(`Failed to cancel download: ${e.message}`, 'error');
+    }
   };
 
   // Load Model into RAM
@@ -396,18 +463,27 @@ export default function App() {
     triggerAlert('Model memory buffers deallocated.');
   };
 
-  // Delete local model file
-  const deleteModel = (modelId: string) => {
+  // Delete local model file natively
+  const deleteModel = async (modelId: string) => {
     playSynthSound('delete');
     const model = MODELS.find(m => m.id === modelId);
     if (!model) return;
 
-    setModelStates(prev => ({
-      ...prev,
-      [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
-    }));
-    setAvailableStorage(prev => prev + model.sizeBytes);
-    triggerAlert(`🗑 Deleted local binary for ${model.name}.`);
+    try {
+      const res = await ModelDownloader.deleteModel({ modelId, fileName: model.fileName });
+      if (res.deleted) {
+        setModelStates(prev => ({
+          ...prev,
+          [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
+        }));
+        setAvailableStorage(prev => prev + model.sizeBytes);
+        triggerAlert(`🗑 Deleted local binary for ${model.name}.`);
+      } else {
+        triggerAlert('Failed to delete file from device storage.', 'error');
+      }
+    } catch (e: any) {
+      triggerAlert(`Deletion failed: ${e.message}`, 'error');
+    }
   };
 
   return (
@@ -743,7 +819,7 @@ export default function App() {
             </div>
           )}
           <iframe 
-            src="https://animlyy.web.app/" 
+            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`} 
             className="iframe-web" 
             title="Animly Web Application"
             onLoad={() => setIsIframeLoading(false)}
