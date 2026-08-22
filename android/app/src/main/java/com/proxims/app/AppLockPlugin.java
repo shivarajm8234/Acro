@@ -34,12 +34,43 @@ public class AppLockPlugin extends Plugin {
     @PluginMethod
     public void isAccessibilityEnabled(PluginCall call) {
         Context context = getContext();
-        String serviceName = context.getPackageName() + "/com.proxims.app.AppFocusAccessibilityService";
-        String enabledServices = Settings.Secure.getString(
-                context.getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        );
-        boolean isEnabled = enabledServices != null && enabledServices.contains(serviceName);
+        boolean isEnabled = false;
+        
+        // Method 1: Check via AccessibilityManager (highly reliable)
+        try {
+            android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
+            if (am != null) {
+                List<android.accessibilityservice.AccessibilityServiceInfo> runningServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+                if (runningServices != null) {
+                    for (android.accessibilityservice.AccessibilityServiceInfo service : runningServices) {
+                        if (service.getId() != null && service.getId().contains(context.getPackageName())) {
+                            isEnabled = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Method 2: Fallback via Settings.Secure (string parsing check)
+        if (!isEnabled) {
+            try {
+                String serviceName1 = context.getPackageName() + "/com.proxims.app.AppFocusAccessibilityService";
+                String serviceName2 = context.getPackageName() + "/.AppFocusAccessibilityService";
+                String enabledServices = Settings.Secure.getString(
+                        context.getContentResolver(),
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                );
+                if (enabledServices != null) {
+                    isEnabled = enabledServices.contains(serviceName1) || enabledServices.contains(serviceName2);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         JSObject ret = new JSObject();
         ret.put("enabled", isEnabled);
         call.resolve(ret);

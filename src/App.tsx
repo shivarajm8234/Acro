@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   // Navigation & UI
-  House, Brain, TelevisionSimple, Briefcase, User, Envelope,
+  House, Brain, TelevisionSimple, Briefcase, User, Envelope, GraduationCap,
   // Actions
   Plus, X, Check, Download, Trash, Play, Pause,
   Upload, FloppyDisk, ArrowSquareOut, MagnifyingGlass,
@@ -21,6 +21,8 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min?url';
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { ragService } from './services/ragService';
+import { getBody, processEmailWithAi } from './services/gmailService';
+import type { GmailEmail } from './services/gmailService';
 import logoImg from './assets/logo.png';
 import './App.css';
 
@@ -33,6 +35,13 @@ interface AppLockPluginType {
 }
 
 const AppLock = registerPlugin<AppLockPluginType>('AppLock');
+
+interface OAuthPluginType {
+  startOAuth(options: { authUrl: string; redirectUri: string }): Promise<{ url: string }>;
+  openGmailApp(): Promise<void>;
+}
+
+const OAuth = registerPlugin<OAuthPluginType>('OAuth');
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -484,6 +493,29 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'placement' | 'animly' | 'gmail' | 'downloader' | 'profile'>('home');
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
 
+  // Gmail & Google OAuth States
+  const [gmailToken, setGmailToken] = useState<string | null>(() => localStorage.getItem('acro_gmail_token'));
+  const [gmailUserEmail, setGmailUserEmail] = useState<string | null>(() => localStorage.getItem('acro_gmail_user_email'));
+  const [gmailMessages, setGmailMessages] = useState<GmailEmail[]>(() => {
+    const cached = localStorage.getItem('acro_gmail_messages');
+    try {
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isFetchingGmail, setIsFetchingGmail] = useState<boolean>(false);
+  const isFetchingGmailRef = useRef(false);
+  const gmailIntervalRef = useRef<any>(null);
+  const [gmailProcessingProgress, setGmailProcessingProgress] = useState<string>('');
+  const [gmailError, setGmailError] = useState<string>('');
+  const [gmailFilterType, setGmailFilterType] = useState<'important' | 'all'>('important');
+  const [expandedGmailId, setExpandedGmailId] = useState<string | null>(null);
+  const [gmailSync, setGmailSync] = useState<boolean>(true);
+  const [githubSync, setGithubSync] = useState<boolean>(true);
+  const [showGmailAuthModal, setShowGmailAuthModal] = useState<boolean>(false);
+  const [gmailAuthUrl, setGmailAuthUrl] = useState<string>('');
+
   // Notepad
   const [isAddNoteOpen, setIsAddNoteOpen] = useState<boolean>(false);
   const [newNoteTitle, setNewNoteTitle] = useState<string>('');
@@ -598,6 +630,34 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => setCurrentTimeTick(Date.now()), 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('acro_gmail_messages');
+      if (cached) {
+        const messages: GmailEmail[] = JSON.parse(cached);
+        const processedIdsCached = localStorage.getItem('acro_gmail_processed_ids');
+        let processedIdsList: string[] = [];
+        if (processedIdsCached) {
+          processedIdsList = JSON.parse(processedIdsCached);
+        }
+        const processedSet = new Set(processedIdsList);
+        let updated = false;
+        for (const msg of messages) {
+          if (msg.id && !processedSet.has(msg.id)) {
+            processedSet.add(msg.id);
+            updated = true;
+          }
+        }
+        if (updated) {
+          localStorage.setItem('acro_gmail_processed_ids', JSON.stringify(Array.from(processedSet)));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to run processed IDs migration:', e);
+    }
+    checkAndEnforceExamBlocks();
   }, []);
 
   const fetchInstalledApps = async () => {
@@ -2064,11 +2124,503 @@ SUGGESTION 3: <advice>`;
     return { response, tokenCount: Math.round(response.split(/\s+/).length * 1.3), timeMs: Date.now() - startTime, isCloud: false };
   };
 
+  // ─── Gmail & Google OAuth Side Effects & Handlers ──────────────────
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token=')) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get('access_token');
+      const expiresIn = params.get('expires_in') || '3600';
+      if (token) {
+        setGmailToken(token);
+        localStorage.setItem('acro_gmail_token', token);
+        localStorage.setItem('acro_gmail_token_expires_at', String(Date.now() + parseInt(expiresIn) * 1000));
+        setGmailError('');
+        
+        // Clean URL hash
+        window.location.hash = '';
+        triggerAlert('Google account authorized!', 'success');
+        
+        // Immediately fetch data using the new token
+        fetchGmailData(token);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showGmailAuthModal) return;
+    const interval = setInterval(() => {
+      try {
+        const iframe = document.getElementById('gmail-oauth-iframe') as HTMLIFrameElement;
+        if (iframe && iframe.contentWindow) {
+          const url = iframe.contentWindow.location.href;
+          if (url && (url.includes('access_token=') || iframe.contentWindow.location.hash.includes('access_token='))) {
+            const hash = iframe.contentWindow.location.hash || '#' + url.split('#')[1];
+            const params = new URLSearchParams(hash.substring(1));
+            const token = params.get('access_token');
+            const expiresIn = params.get('expires_in') || '3600';
+            if (token) {
+              setGmailToken(token);
+              localStorage.setItem('acro_gmail_token', token);
+              localStorage.setItem('acro_gmail_token_expires_at', String(Date.now() + parseInt(expiresIn) * 1000));
+              setGmailError('');
+              setShowGmailAuthModal(false);
+              triggerAlert('Google account authorized!', 'success');
+              
+              // Fetch user email details
+              fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: `Bearer ${token}` }
+              })
+                .then(res => res.json())
+                .then(profile => {
+                  if (profile.email) {
+                    setGmailUserEmail(profile.email);
+                    localStorage.setItem('acro_gmail_user_email', profile.email);
+                  }
+                })
+                .catch(err => console.warn('Failed to fetch user email details:', err));
+
+              fetchGmailData(token);
+            }
+          }
+        }
+      } catch (err) {
+        // Safe to ignore Cross-Origin errors until redirect matches localhost
+      }
+    }, 600);
+    return () => clearInterval(interval);
+  }, [showGmailAuthModal]);
+
+  useEffect(() => {
+    const expiresAt = localStorage.getItem('acro_gmail_token_expires_at');
+    if (expiresAt && Date.now() > Number(expiresAt)) {
+      setGmailToken(null);
+      setGmailUserEmail(null);
+      localStorage.removeItem('acro_gmail_token');
+      localStorage.removeItem('acro_gmail_token_expires_at');
+      localStorage.removeItem('acro_gmail_user_email');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (gmailSync && activeTab === 'gmail' && gmailToken && gmailMessages.length === 0 && !isFetchingGmail) {
+      fetchGmailData(gmailToken);
+    }
+  }, [activeTab, gmailSync]);
+
+  const setupGmailInterval = (token: string) => {
+    if (gmailIntervalRef.current) {
+      clearInterval(gmailIntervalRef.current);
+    }
+    gmailIntervalRef.current = setInterval(() => {
+      console.log('Automated background Gmail sync triggered...');
+      fetchGmailData(token);
+    }, 3 * 60 * 60 * 1000); // Check for new emails every 3 hours
+  };
+
+  useEffect(() => {
+    if (!gmailSync || !gmailToken) {
+      if (gmailIntervalRef.current) {
+        clearInterval(gmailIntervalRef.current);
+        gmailIntervalRef.current = null;
+      }
+      return;
+    }
+    
+    // Trigger an immediate sync when background sync is turned ON or connected
+    fetchGmailData(gmailToken);
+    setupGmailInterval(gmailToken);
+
+    return () => {
+      if (gmailIntervalRef.current) {
+        clearInterval(gmailIntervalRef.current);
+        gmailIntervalRef.current = null;
+      }
+    };
+  }, [gmailSync, gmailToken]);
+
+  async function checkAndEnforceExamBlocks() {
+    if (!Capacitor.isNativePlatform()) return;
+
+    try {
+      const cached = localStorage.getItem('acro_gmail_messages');
+      if (!cached) return;
+      
+      const messages: GmailEmail[] = JSON.parse(cached);
+      const examMessages = messages.filter(m => m.category === 'Exam' && m.eventDate);
+      if (examMessages.length === 0) return;
+
+      const now = Date.now();
+      let activeExamEndTime = 0;
+      let activeExamSubject = '';
+
+      for (const msg of examMessages) {
+        if (!msg.eventDate) continue;
+        const eventTime = msg.eventTime || '09:00';
+        const examTimeStr = `${msg.eventDate}T${eventTime}:00`;
+        const examTime = new Date(examTimeStr).getTime();
+        if (isNaN(examTime)) continue;
+
+        const startBlock = examTime - 5 * 24 * 60 * 60 * 1000; // 5 days before
+        const endBlock = examTime + 4 * 60 * 60 * 1000; // 4 hours after exam starts
+
+        if (now >= startBlock && now <= endBlock) {
+          if (endBlock > activeExamEndTime) {
+            activeExamEndTime = endBlock;
+            activeExamSubject = msg.eventTitle || msg.subject || 'Exam';
+          }
+        }
+      }
+
+      if (activeExamEndTime > 0) {
+        console.log(`Active exam block detected for "${activeExamSubject}" until ${new Date(activeExamEndTime).toLocaleString()}`);
+        
+        let socialPackages: string[] = [];
+        const cachedSocial = localStorage.getItem('acro_social_apps');
+        if (cachedSocial) {
+          try {
+            socialPackages = JSON.parse(cachedSocial).filter((pkg: string) => !pkg.toLowerCase().includes('whatsapp') && !pkg.toLowerCase().includes('youtube'));
+          } catch {}
+        }
+
+        const appRes = await AppLock.getInstalledApps();
+        const installed = appRes.apps || [];
+
+        if (socialPackages.length === 0 && installed.length > 0) {
+          const prompt = `System Instructions: You are Acro AI's App Safety Advisor.
+Analyze this list of installed apps:
+${JSON.stringify(installed.map(a => ({ name: a.appName, package: a.packageName })))}
+
+Identify all apps that are social media, messaging, chat, or social networking platforms (e.g. Instagram, Facebook, Snapchat, Telegram, TikTok, X, Twitter, Discord, Reddit, etc.).
+CRITICAL: Do NOT include YouTube (com.google.android.youtube or any youtube client) or WhatsApp (com.whatsapp or any whatsapp client). They must remain unblocked.
+Format your output strictly as a JSON array of package strings:
+["package.name.1", "package.name.2", ...]
+Do not write any other text. Output only valid JSON.`;
+
+          try {
+            setGmailProcessingProgress('AI identifying social media apps for exam prep blocking...');
+            const aiRes = await runAiInference(prompt);
+            const responseText = aiRes.response || '';
+            const jsonStart = responseText.indexOf('[');
+            const jsonEnd = responseText.lastIndexOf(']');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              socialPackages = JSON.parse(responseText.substring(jsonStart, jsonEnd + 1)).filter((pkg: string) => !pkg.toLowerCase().includes('whatsapp') && !pkg.toLowerCase().includes('youtube'));
+              localStorage.setItem('acro_social_apps', JSON.stringify(socialPackages));
+            }
+          } catch (e) {
+            console.error('Failed to run AI app analysis:', e);
+            const socialKeywords = ['instagram', 'facebook', 'snapchat', 'telegram', 'twitter', 'tiktok', 'reddit', 'discord', 'messenger'];
+            socialPackages = installed
+              .filter(app => {
+                const pkg = app.packageName.toLowerCase();
+                const name = app.appName.toLowerCase();
+                if (pkg.includes('youtube') || pkg.includes('whatsapp')) return false;
+                return socialKeywords.some(kw => pkg.includes(kw) || name.includes(kw));
+              })
+              .map(app => app.packageName);
+            localStorage.setItem('acro_social_apps', JSON.stringify(socialPackages));
+          } finally {
+            setGmailProcessingProgress('');
+          }
+        }
+
+        const durationMinutes = Math.max(1, Math.round((activeExamEndTime - now) / 60000));
+        let blockedCount = 0;
+        
+        for (const pkg of socialPackages) {
+          const appInfo = installed.find(a => a.packageName === pkg);
+          if (appInfo) {
+            console.log(`Blocking ${appInfo.appName} (${pkg}) for ${durationMinutes} minutes.`);
+            await AppLock.setAppLock({ packageName: pkg, duration: durationMinutes, unit: 'MINUTES' });
+            blockedCount++;
+          }
+        }
+
+        if (blockedCount > 0) {
+          triggerAlert(`Exam Prep Focus: Blocked ${blockedCount} social media apps until exam ends!`, 'info');
+        }
+      }
+    } catch (e) {
+      console.error('Error enforcing exam blocks:', e);
+    }
+  }
+
+  const handleGmailLogin = () => {
+    try {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+      const redirectUri = Capacitor.isNativePlatform() ? 'https://localhost' : window.location.origin;
+      const scope = encodeURIComponent('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events');
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=select_account`;
+      
+      if (Capacitor.isNativePlatform()) {
+        triggerAlert('Launching secure native sign-in...', 'info');
+        OAuth.startOAuth({ authUrl, redirectUri })
+          .then(res => {
+            const url = res.url;
+            const hash = '#' + url.split('#')[1];
+            const params = new URLSearchParams(hash.substring(1));
+            const token = params.get('access_token');
+            const expiresIn = params.get('expires_in') || '3600';
+            if (token) {
+              setGmailToken(token);
+              localStorage.setItem('acro_gmail_token', token);
+              localStorage.setItem('acro_gmail_token_expires_at', String(Date.now() + parseInt(expiresIn) * 1000));
+              setGmailError('');
+              triggerAlert('Google account authorized!', 'success');
+              
+              // Fetch user email details
+              fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: `Bearer ${token}` }
+              })
+                .then(res => res.json())
+                .then(profile => {
+                  if (profile.email) {
+                    setGmailUserEmail(profile.email);
+                    localStorage.setItem('acro_gmail_user_email', profile.email);
+                  }
+                })
+                .catch(err => console.warn('Failed to fetch user email details:', err));
+
+              fetchGmailData(token);
+            } else {
+              triggerAlert('Sign-in cancelled or failed.', 'error');
+            }
+          })
+          .catch(err => {
+            setGmailError(err.message || 'Failed to authenticate.');
+            triggerAlert('Google sign-in failed.', 'error');
+          });
+      } else {
+        setGmailAuthUrl(authUrl);
+        setShowGmailAuthModal(true);
+        triggerAlert('Opening secure sign-in portal...', 'info');
+      }
+    } catch (err: any) {
+      setGmailError(err.message || 'Failed to initialize Google authentication.');
+      triggerAlert('Failed to initialize login.', 'error');
+    }
+  };
+
+  const handleGmailLogout = () => {
+    setGmailToken(null);
+    setGmailUserEmail(null);
+    setGmailMessages([]);
+    localStorage.removeItem('acro_gmail_token');
+    localStorage.removeItem('acro_gmail_token_expires_at');
+    localStorage.removeItem('acro_gmail_user_email');
+    localStorage.removeItem('acro_gmail_messages');
+    triggerAlert('Disconnected Google account.', 'info');
+  };
+
+  const createCalendarEvent = async (token: string, email: GmailEmail) => {
+    if (!email.eventDate) return;
+    
+    const title = email.eventTitle || email.subject || 'Academic Event';
+    const description = `Imported from Gmail screen:\nSummary: ${email.summary}\nAction Required: ${email.actionItems}`;
+    const eventTime = email.eventTime || '09:00';
+    const startDateTime = `${email.eventDate}T${eventTime}:00`;
+    
+    const [hours, minutes] = eventTime.split(':').map(Number);
+    const endHours = (hours + 1) % 24;
+    const endHoursStr = String(endHours).padStart(2, '0');
+    const endDateTime = `${email.eventDate}T${endHoursStr}:${String(minutes).padStart(2, '0')}:00`;
+
+    let timeZone = 'UTC';
+    try {
+      timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {}
+
+    const eventData = {
+      summary: title,
+      description: description,
+      start: {
+        dateTime: startDateTime,
+        timeZone: timeZone
+      },
+      end: {
+        dateTime: endDateTime,
+        timeZone: timeZone
+      }
+    };
+
+    try {
+      console.log('Attempting to create calendar event:', eventData);
+      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData)
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Google Calendar Event Creation Failed:', errorText);
+      } else {
+        const createdEvent = await res.json();
+        console.log('Google Calendar Event Created Successfully:', createdEvent);
+        triggerAlert(`Added to Google Calendar: "${title}"`, 'success');
+      }
+    } catch (e) {
+      console.error('Error creating calendar event:', e);
+    }
+  };
+
+  const fetchGmailData = async (token: string) => {
+    if (isFetchingGmailRef.current) {
+      console.log('Gmail sync is already in progress, skipping...');
+      return;
+    }
+    isFetchingGmailRef.current = true;
+    setIsFetchingGmail(true);
+    setGmailError('');
+    setGmailProcessingProgress('Connecting to Gmail REST API...');
+    
+    try {
+      const cached = localStorage.getItem('acro_gmail_messages');
+      let currentMessages: GmailEmail[] = [];
+      if (cached) {
+        try {
+          currentMessages = JSON.parse(cached);
+        } catch (e) {
+          currentMessages = [];
+        }
+      }
+
+      let queryParams = '?maxResults=8';
+      if (currentMessages.length > 0) {
+        const timestamps = currentMessages
+          .map(m => new Date(m.date).getTime())
+          .filter(t => !isNaN(t));
+        
+        if (timestamps.length > 0) {
+          const latestTimeSec = Math.floor(Math.max(...timestamps) / 1000) - 1;
+          queryParams += `&q=after:${latestTimeSec}`;
+        }
+      }
+
+      const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages${queryParams}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!listRes.ok) {
+        const errText = await listRes.text();
+        console.error('Gmail API Error Response:', errText);
+        if (listRes.status === 401) {
+          handleGmailLogout();
+          throw new Error('Google session has expired. Please sign in again.');
+        }
+        throw new Error(`Gmail API returned status: ${listRes.status} (${errText})`);
+      }
+      
+      const listData = await listRes.json();
+      const messages = listData.messages || [];
+
+      const processedIdsCached = localStorage.getItem('acro_gmail_processed_ids');
+      let processedIds = new Set<string>();
+      if (processedIdsCached) {
+        try {
+          const parsed = JSON.parse(processedIdsCached);
+          if (Array.isArray(parsed)) {
+            processedIds = new Set(parsed);
+          }
+        } catch {}
+      }
+
+      const existingIds = new Set(currentMessages.map(m => m.id));
+      const newMessages = messages.filter((m: any) => !existingIds.has(m.id) && !processedIds.has(m.id));
+      
+      if (newMessages.length === 0) {
+        console.log('No new messages since last Gmail sync.');
+        return;
+      }
+      
+      const emailBatch: Omit<GmailEmail, 'isAiProcessed' | 'isImportant' | 'category' | 'summary' | 'actionItems' | 'eventTitle' | 'eventDate' | 'eventTime'>[] = [];
+      
+      for (let i = 0; i < newMessages.length; i++) {
+        setGmailProcessingProgress(`Fetching message ${i + 1} of ${newMessages.length}...`);
+        const msgId = newMessages[i].id;
+        const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (!msgRes.ok) continue;
+        const detail = await msgRes.json();
+        
+        const headers = detail.payload?.headers || [];
+        const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+        const fromHeader = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown Sender';
+        const dateHeader = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
+        
+        let sender = fromHeader;
+        let senderEmail = '';
+        const emailMatch = fromHeader.match(/<([^>]+)>/);
+        if (emailMatch) {
+          sender = fromHeader.replace(/<[^>]+>/, '').trim().replace(/^"|"$/g, '');
+          senderEmail = emailMatch[1];
+        } else {
+          senderEmail = fromHeader;
+        }
+        
+        const snippet = detail.snippet || '';
+        let body = getBody(detail.payload);
+        if (!body) body = snippet;
+        
+        emailBatch.push({
+          id: msgId,
+          sender,
+          senderEmail,
+          subject,
+          date: dateHeader,
+          snippet,
+          body: body.substring(0, 1500)
+        });
+      }
+      
+      const finalNewEmails: GmailEmail[] = [];
+      const aiQueryWrapper = async (prompt: string) => {
+        const result = await runAiInference(prompt);
+        return { response: result.response };
+      };
+
+      let updatedMessagesList = [...currentMessages];
+      for (let i = 0; i < emailBatch.length; i++) {
+        const item = emailBatch[i];
+        setGmailProcessingProgress(`AI screening: "${item.subject.substring(0, 25)}..." (${i + 1}/${emailBatch.length})`);
+        
+        const processed = await processEmailWithAi(item, aiQueryWrapper);
+        finalNewEmails.push(processed);
+        
+        if (processed.eventDate) {
+          await createCalendarEvent(token, processed);
+        }
+        
+        processedIds.add(item.id);
+        localStorage.setItem('acro_gmail_processed_ids', JSON.stringify(Array.from(processedIds)));
+
+        // Prepend new messages to top of current messages
+        updatedMessagesList = [processed, ...updatedMessagesList];
+        setGmailMessages(updatedMessagesList);
+        localStorage.setItem('acro_gmail_messages', JSON.stringify(updatedMessagesList));
+      }
+      
+      triggerAlert(`Sync complete! Processed ${finalNewEmails.length} new email(s).`, 'success');
+      
+    } catch (err: any) {
+      console.error('Gmail Fetch Error:', err);
+      setGmailError(err.message || 'Failed to sync with Gmail API.');
+    } finally {
+      isFetchingGmailRef.current = false;
+      setIsFetchingGmail(false);
+      setGmailProcessingProgress('');
+      checkAndEnforceExamBlocks();
+    }
+  };
+
   // ─── Hardware toggles ─────────────────────────────────────────────
   const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
   const [gpuDelegateEnabled, setGpuDelegateEnabled] = useState<boolean>(true);
-  const [gmailSync, setGmailSync] = useState<boolean>(true);
-  const [githubSync, setGithubSync] = useState<boolean>(true);
 
   // ─── Alert ───────────────────────────────────────────────────────
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -3127,27 +3679,91 @@ Answer the student's question directly using the profile and context above.
               <Envelope size={20} weight="fill" />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>Gmail & Outlook Sync</h2>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Real-time background index of contextual emails & academic notifications</p>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>Gmail AI Intelligence</h2>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Filter exams, placements, and important academic events using cloud or local AI models</p>
             </div>
           </div>
 
-          <div className="card-panel">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-4)', paddingBottom: 'var(--sp-3)', borderBottom: '1px solid var(--border)' }}>
-              <div>
-                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Automated Email Context Indexer</h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: '2px 0 0 0' }}>Sync deadlines, assignment emails & exam updates directly with AI Task Intelligence</p>
-              </div>
-              <span className={`badge ${gmailSync ? 'badge-green' : 'badge-neutral'}`}>
-                {gmailSync ? 'Sync Enabled' : 'Sync Paused'}
-              </span>
-            </div>
+          <div className="gmail-container">
+            {/* Sync Settings Header Card */}
+            <div className="gmail-header-card">
+              <div className="gmail-status-header">
+                {gmailToken ? (
+                  <div className="gmail-status-info">
+                    <div className="gmail-status-avatar">
+                      {(gmailUserEmail || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="gmail-status-text">
+                      <span className="gmail-user-email">{gmailUserEmail || 'Google Account Connected'}</span>
+                      <span className="gmail-sync-time">
+                        Status: Active Session · AI Engine: {cloudSettings.useCloud ? 'Cloud API' : 'Local LLM'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="gmail-status-info">
+                    <div className="gmail-status-avatar" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>
+                      ?
+                    </div>
+                    <div className="gmail-status-text">
+                      <span className="gmail-user-email">Google Mailbox Disconnected</span>
+                      <span className="gmail-sync-time">Connect your Google account to classify mailbox with AI</span>
+                    </div>
+                  </div>
+                )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--sp-3)', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+                <div className="gmail-header-actions">
+                  {gmailToken ? (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={isFetchingGmail}
+                        onClick={() => {
+                          playSynthSound('click');
+                          fetchGmailData(gmailToken);
+                          setupGmailInterval(gmailToken); // Reset the 3-hour timer
+                        }}
+                      >
+                        <ArrowsClockwise size={14} weight="bold" className={isFetchingGmail ? 'animate-spin' : ''} />
+                        Sync Now
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        disabled={isFetchingGmail}
+                        onClick={() => {
+                          playSynthSound('delete');
+                          handleGmailLogout();
+                        }}
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        playSynthSound('click');
+                        handleGmailLogin();
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '2px' }}>
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                      </svg>
+                      Sign in with Google
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Background Sync Setting Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--sp-3)', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', marginTop: 'var(--sp-2)' }}>
                 <div>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-1)', display: 'block' }}>Background Gmail & Outlook Sync</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Scan incoming university emails for auto-extracting tasks & calendar reminders</span>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-1)', display: 'block' }}>Background Sync & AI Filtering</span>
+                  <span style={{ fontSize: '0.7125rem', color: 'var(--text-3)' }}>Automatically classify university emails in the background every 3 hours</span>
                 </div>
                 <button
                   type="button"
@@ -3169,25 +3785,207 @@ Answer the student's question directly using the profile and context above.
                   }} />
                 </button>
               </div>
-
-              <div className="card-panel" style={{ background: 'var(--surface-1)', border: '1px dashed var(--border-strong)', padding: 'var(--sp-4)', textAlign: 'center' }}>
-                <Envelope size={32} weight="duotone" style={{ color: 'var(--accent)', marginBottom: 'var(--sp-2)' }} />
-                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-1)', margin: '0 0 var(--sp-1) 0' }}>Academic Mailbox Connection</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: '0 0 var(--sp-3) 0', maxWidth: '360px', marginLeft: 'auto', marginRight: 'auto' }}>
-                  Connected student mailbox: <strong style={{ color: 'var(--text-1)' }}>{studentProfile.email || 'student@university.edu'}</strong>
-                </p>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  style={{ margin: '0 auto' }}
-                  onClick={() => {
-                    playSynthSound('click');
-                    triggerAlert('Mailbox sync refreshed. Context indexed with AI engine.', 'success');
-                  }}
-                >
-                  <ArrowsClockwise size={14} weight="bold" /> Trigger Instant Mail Sync
-                </button>
-              </div>
             </div>
+
+            {/* Error Message */}
+            {gmailError && (
+              <div className="toast error" style={{ position: 'static', transform: 'none', width: '100%', margin: '0 0 var(--sp-2) 0', animation: 'none' }}>
+                <span className="toast-icon" />
+                <span className="toast-text" style={{ fontSize: '0.8125rem' }}>{gmailError}</span>
+              </div>
+            )}
+
+            {/* If fetching, show animated progress bar */}
+            {isFetchingGmail && (
+              <div className="gmail-loading-indicator">
+                <ArrowsClockwise size={28} weight="bold" className="animate-spin" style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-1)' }}>Syncing Academic mailbox...</span>
+                <span className="gmail-loading-progress">{gmailProcessingProgress}</span>
+              </div>
+            )}
+
+            {/* Logged In View - Filters and List */}
+            {(gmailToken || gmailMessages.length > 0) && !isFetchingGmail && (
+              <>
+                {/* Filter Pills Bar */}
+                <div className="gmail-filter-bar">
+                  <button
+                    className={`gmail-filter-btn ${gmailFilterType === 'important' ? 'active' : ''}`}
+                    onClick={() => {
+                      playSynthSound('click');
+                      setGmailFilterType('important');
+                    }}
+                  >
+                    <Star size={14} weight={gmailFilterType === 'important' ? 'fill' : 'regular'} />
+                    AI Filtered (Exams & Placements Only)
+                  </button>
+                  <button
+                    className={`gmail-filter-btn ${gmailFilterType === 'all' ? 'active' : ''}`}
+                    onClick={() => {
+                      playSynthSound('click');
+                      setGmailFilterType('all');
+                    }}
+                  >
+                    <Envelope size={14} weight={gmailFilterType === 'all' ? 'fill' : 'regular'} />
+                    All Sync'd Messages ({gmailMessages.length})
+                  </button>
+                </div>
+
+                {/* Email Cards List */}
+                <div className="gmail-list">
+                  {(() => {
+                    const displayed = gmailMessages.filter(m =>
+                      gmailFilterType === 'all' ? true : m.isImportant
+                    );
+
+                    if (displayed.length === 0) {
+                      return (
+                        <div className="gmail-empty-state">
+                          <Envelope size={32} weight="duotone" style={{ color: 'var(--text-3)', marginBottom: 'var(--sp-2)' }} />
+                          <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-2)', margin: '0 0 2px 0' }}>
+                            {gmailFilterType === 'important' ? 'No Academic Alerts Detected' : 'No Emails Synced'}
+                          </h4>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0, maxWidth: '280px' }}>
+                            {gmailFilterType === 'important'
+                              ? 'Your placements, exams, and university alerts inbox is clean! Enjoy the clutter-free space.'
+                              : 'Connect your Gmail or click Trigger Sync to load messages.'}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return displayed.map(msg => (
+                      <div key={msg.id} className="gmail-card">
+                        <div className="gmail-card-header">
+                          <div className="gmail-card-title-group">
+                            <h4 className="gmail-card-subject">{msg.subject}</h4>
+                            <div className="gmail-card-meta">
+                              <span className="gmail-card-sender">{msg.sender} &lt;{msg.senderEmail}&gt;</span>
+                              <span>·</span>
+                              <span className="gmail-card-date">{new Date(msg.date).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                          </div>
+
+                          {/* Category Badge */}
+                          <span 
+                            className={`gmail-card-category-badge ${
+                              msg.category === 'Exam' ? 'gmail-badge-exam' :
+                              msg.category === 'Placement' ? 'gmail-badge-placement' :
+                              msg.category === 'Important Academic' ? 'gmail-badge-academic' : 'gmail-badge-none'
+                            }`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            {msg.category === 'Exam' && <Note size={12} weight="fill" />}
+                            {msg.category === 'Placement' && <Briefcase size={12} weight="fill" />}
+                            {msg.category === 'Important Academic' && <GraduationCap size={12} weight="fill" />}
+                            {msg.category === 'Exam' ? 'Exam' :
+                             msg.category === 'Placement' ? 'Placement' :
+                             msg.category === 'Important Academic' ? 'Academic' : 'Other'}
+                          </span>
+                        </div>
+
+                        {/* AI Summary Box */}
+                        {msg.isAiProcessed && (
+                          <div className="gmail-card-ai-box" style={{
+                            borderLeftColor: msg.category === 'Exam' ? '#d97706' :
+                                            msg.category === 'Placement' ? '#7c3aed' :
+                                            msg.category === 'Important Academic' ? '#2563eb' : 'var(--border)'
+                          }}>
+                            <div className="gmail-ai-title" style={{
+                              color: msg.category === 'Exam' ? '#d97706' :
+                                     msg.category === 'Placement' ? '#7c3aed' :
+                                     msg.category === 'Important Academic' ? '#2563eb' : 'var(--text-3)'
+                            }}>
+                              <Brain size={12} weight="fill" />
+                              Acro AI Context Summary
+                            </div>
+                            <p className="gmail-ai-summary">{msg.summary}</p>
+                            {msg.actionItems && msg.actionItems !== 'None' && (
+                              <div className="gmail-ai-action-items">
+                                <Warning size={12} weight="fill" />
+                                Action Required: {msg.actionItems}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Expandable full email body */}
+                        {expandedGmailId === msg.id && (
+                          <div className="gmail-card-body-collapse">
+                            <h5 className="gmail-body-title">Full Email Content</h5>
+                            <div className="gmail-body-content">{msg.body}</div>
+                          </div>
+                        )}
+
+                        {/* Action buttons row */}
+                        <div style={{ display: 'flex', gap: 'var(--sp-4)', marginTop: 'var(--sp-2)' }}>
+                          {/* Expand/Collapse Toggle Button */}
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            style={{ padding: 0, height: 'auto', background: 'transparent', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => {
+                              playSynthSound('click');
+                              setExpandedGmailId(expandedGmailId === msg.id ? null : msg.id);
+                            }}
+                          >
+                            {expandedGmailId === msg.id ? (
+                              <>Hide Full Email <CaretUp size={12} /></>
+                            ) : (
+                              <>View Full Email <CaretDown size={12} /></>
+                            )}
+                          </button>
+
+                          {/* Open in Gmail Redirect Button */}
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            style={{ padding: 0, height: 'auto', background: 'transparent', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-3)' }}
+                            onClick={() => {
+                              playSynthSound('click');
+                              if (Capacitor.isNativePlatform()) {
+                                OAuth.openGmailApp();
+                              } else {
+                                window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank');
+                              }
+                            }}
+                          >
+                            Open in Gmail <ArrowSquareOut size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </>
+            )}
+
+            {/* Offline/Not Connected Empty State */}
+            {!gmailToken && gmailMessages.length === 0 && !isFetchingGmail && (
+              <div className="gmail-empty-state" style={{ padding: 'var(--sp-6) var(--sp-4)', background: 'var(--surface-2)' }}>
+                <Envelope size={48} weight="duotone" style={{ color: 'var(--accent)', opacity: 0.8, marginBottom: 'var(--sp-3)' }} />
+                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-1)', margin: '0 0 var(--sp-1) 0' }}>Academic Mail Intelligence</h3>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-3)', margin: '0 0 var(--sp-4) 0', maxWidth: '360px' }}>
+                  Sign in with Google to automatically extract and filter examinations, test papers, campus placement drives, and critical university warnings.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      playSynthSound('click');
+                      handleGmailLogin();
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                    </svg>
+                    Connect Google Mailbox
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -4129,6 +4927,37 @@ Answer the student's question directly using the profile and context above.
               <button className="btn btn-danger" onClick={() => { handleDeleteNote(activeViewNote.id); setActiveViewNote(null); }}>
                 <Trash size={14} weight="bold" /> Delete Note
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gmail OAuth Modal Interceptor */}
+      {showGmailAuthModal && (
+        <div className="modal-overlay" onClick={() => setShowGmailAuthModal(false)}>
+          <div className="modal modal-wide" onClick={e => e.stopPropagation()} style={{ maxWidth: '640px', height: '80%', overflow: 'hidden' }} role="dialog" aria-modal="true">
+            <div className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-title-group">
+                <div className="modal-icon-wrap" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
+                  <Envelope size={18} weight="fill" />
+                </div>
+                <div>
+                  <h3 className="modal-title">Sign in with Google</h3>
+                  <p className="modal-subtitle">Secure authorization via Google Accounts</p>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setShowGmailAuthModal(false)} aria-label="Close">
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+            <div className="modal-body" style={{ padding: 0, overflow: 'hidden', height: 'calc(100% - 70px)', background: '#f8fafc' }}>
+              <iframe
+                id="gmail-oauth-iframe"
+                src={gmailAuthUrl}
+                style={{ width: '100%', height: '100%', border: 'none', background: '#ffffff' }}
+                title="Google OAuth Sign-In"
+              />
             </div>
           </div>
         </div>

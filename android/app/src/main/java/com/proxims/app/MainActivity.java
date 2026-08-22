@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ModelDownloaderPlugin.class);
         registerPlugin(LlmInferencePlugin.class);
         registerPlugin(AppLockPlugin.class);
+        registerPlugin(OAuthPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

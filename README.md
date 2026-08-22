@@ -1,32 +1,66 @@
-# React + TypeScript + Vite
+# Acro — Exam Focus & Gmail Alert Automation
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Acro is an autonomous Android utility designed to help students maximize focus during exam periods by automatically blocking distracting applications based on real-time academic calendar sync from Gmail.
 
-Currently, two official plugins are available:
+## 🚀 Key Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### 1. Exam-Aware Application Blocker
+*   **Enforcement Window**: Calculates a protection lock window starting **5 days before** any detected exam date and ending **4 hours after** the exam start time.
+*   **Intelligent Social Categorization**: Runs local and cloud AI models to dynamically identify installed social media apps and packages.
+*   **WhatsApp & YouTube Exclusions**: Standard communication and study tools (**YouTube** and **WhatsApp**) are strictly whitelisted and never blocked.
+*   **Native Enforcement**: Relies on a native Android Accessibility Service to intercept and block distracting app launches.
 
-## React Compiler
+### 2. High-Performance Gmail Sync & Ledger
+*   **Search Query Optimization (`q=after:TIMESTAMP`)**: Instead of fetching standard mailbox lists, the sync engine queries Gmail using date-filters targeting only new emails arriving after the latest locally stored message.
+*   **Permanent Processed Ledger (`acro_gmail_processed_ids`)**: Tracks every email ID that has been screened by the AI, guaranteeing zero redundant API calls and preventing duplicate cloud-billing charges even when logging out or clearing local app cache.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 3. Background Sync & Override Cycle
+*   **3-Hour Polling Rate**: Background sync checks are throttled to run every 3 hours, preserving mobile battery and keeping Google API console metrics at a minimum.
+*   **Manual Override**: Clicking the **Sync Now** button performs an immediate sync and automatically resets the 3-hour timer, aligning subsequent checks to run 3 hours post-manual-refresh.
 
-## Expanding the Oxlint configuration
+### 4. Robust Accessibility Service Checking
+*   **Multi-Tiered Verification**: Checks native `AccessibilityManager` system services and queries the system secure settings database to reliably check permission state across all Android ROMs, eliminating repeating prompt loops.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+---
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## 🛠️ Environment Configuration
+
+Create a `.env` file in the project root:
+
+```env
+VITE_GUEST_GROQ_API_KEY=your_groq_api_key
+VITE_HF_TOKEN=your_hugging_face_token
+VITE_GOOGLE_CLIENT_ID=your_google_client_id
+VITE_GOOGLE_CLIENT_SECRET=your_google_client_secret
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+---
+
+## 📦 Build & Deploy Instructions
+
+### Prerequisites
+*   Android SDK & ADB configured
+*   Java JDK 21+
+*   Node.js 18+
+
+### Steps
+1.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+2.  **Build the Web Application**:
+    ```bash
+    npm run build
+    ```
+3.  **Sync Web Assets to Capacitor**:
+    ```bash
+    npx cap sync android
+    ```
+4.  **Assemble Debug APK**:
+    ```bash
+    cd android && ./gradlew assembleDebug && cd ..
+    ```
+5.  **Deploy to Device**:
+    ```bash
+    adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+    ```
