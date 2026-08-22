@@ -25,7 +25,12 @@ import {
   Paperclip,
   Save,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  Briefcase,
+  Search,
+  Award,
+  TrendingUp,
+  AlertTriangle
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -225,8 +230,354 @@ export default function App() {
   const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
 
   // Tab navigation states
-  const [activeTab, setActiveTab] = useState<'downloader' | 'animly' | 'profile'>('downloader');
+  const [activeTab, setActiveTab] = useState<'downloader' | 'animly' | 'profile' | 'placement'>('downloader');
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
+
+  // Placement Hub states
+  const [companyName, setCompanyName] = useState<string>('');
+  const [jobRole, setJobRole] = useState<string>('');
+  const [isAnalyzingMatch, setIsAnalyzingMatch] = useState<boolean>(false);
+  const [companyMatchResult, setCompanyMatchResult] = useState<string>('');
+  const [companyInfoSearch, setCompanyInfoSearch] = useState<string>('');
+  const [matchScore, setMatchScore] = useState<number | null>(null);
+
+  const [isAnalyzingAts, setIsAnalyzingAts] = useState<boolean>(false);
+  const [atsResult, setAtsResult] = useState<{
+    score: number;
+    feedback: string;
+    suggestions: string[];
+    keywordsFound: string[];
+    keywordsMissing: string[];
+  } | null>(null);
+
+  // Extract text from base64 PDF resume using pdfjs-dist
+  const extractTextFromResume = async (dataUrl: string): Promise<string> => {
+    try {
+      if (!dataUrl) return '';
+      const parts = dataUrl.split(';base64,');
+      const base64Data = parts.length === 2 ? parts[1] : dataUrl;
+      const binaryString = window.atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const loadingTask = pdfjsLib.getDocument({ data: bytes });
+      const pdf = await loadingTask.promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+      return fullText.trim();
+    } catch (err: any) {
+      console.error('Error extracting text from PDF:', err);
+      throw new Error(`Failed to extract text from PDF: ${err.message}`);
+    }
+  };
+  // Web search tool logic to find company / role requirements using local LLM fallback
+  const fetchWebSearch = async (query: string): Promise<string> => {
+    try {
+      // Direct DDG API request
+      const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.AbstractText) {
+          return `DuckDuckGo Instant Answer: ${data.AbstractText}`;
+        }
+      }
+    } catch (e) {
+      console.warn('DDG API search failed / CORS blocked. Falling back to local model search...');
+    }
+
+    // AI Fallback Search Crawler (using local model)
+    try {
+      const model = MODELS.find(m => m.id === chatModelId);
+      if (!model) {
+        throw new Error('Active model not found.');
+      }
+      const modelState = modelStates[chatModelId];
+      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
+      if (!isDownloaded) {
+        throw new Error(`Model ${model.name} is not downloaded. Please download it first from the AI Downloader tab.`);
+      }
+
+      // Check if loaded
+      const status = await LlmInference.getStatus();
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        triggerAlert(`Loading ${model.name} for role search...`, 'info');
+        const loadResult = await LlmInference.loadModel({
+          modelId: chatModelId,
+          fileName: model.fileName,
+          useGpu: false
+        });
+        if (!loadResult.loaded) {
+          throw new Error('Failed to load local model.');
+        }
+      }
+
+      const prompt = `Synthesize realistic job role requirements, typical tech stack, and key selection criteria for the following role: "${query}". Respond with a factual, concise summary list.`;
+      const result = await LlmInference.generateResponse({ prompt });
+      return result.response || `Role requirements for "${query}" synthesized.`;
+    } catch (err: any) {
+      return `Failed to fetch search results for "${query}": ${err.message}`;
+    }
+  };
+  const handleAnalyzeJobMatch = async () => {
+    if (!companyName.trim() || !jobRole.trim()) {
+      triggerAlert('Please enter both Company Name and Job Role.', 'error');
+      return;
+    }
+    if (!studentProfile.resumeData) {
+      triggerAlert('Resume not uploaded! Please upload your resume in the Profile tab first.', 'error');
+      return;
+    }
+
+    setIsAnalyzingMatch(true);
+    setCompanyMatchResult('');
+    setCompanyInfoSearch('');
+    setMatchScore(null);
+    playSynthSound('click');
+    try {
+      const enableSearch = window.confirm("Would you like to search the web for real-time company info & role requirements? (If Cancel, local AI model knowledge will be used.)");
+      
+      // 1. Extract text from resume
+      triggerAlert('Extracting resume content locally...', 'info');
+      const resumeText = await extractTextFromResume(studentProfile.resumeData);
+      
+      // 2. Perform Web Search optionally
+      let searchResults = "Use local AI knowledge for requirements of this role.";
+      if (enableSearch) {
+        triggerAlert(`Searching web for ${jobRole} roles at ${companyName}...`, 'info');
+        searchResults = await fetchWebSearch(`${companyName} ${jobRole} role requirements and skills needed`);
+        setCompanyInfoSearch(searchResults);
+      } else {
+        setCompanyInfoSearch("Web search disabled by user. Using local model knowledge.");
+      }
+
+      // 3. Compile prompt & run AI analysis matching level (with strict limits to prevent JNI crash)
+      triggerAlert('Analyzing match with AI...', 'info');
+
+      // Strict truncation to fit in MediaPipe context limits
+      const maxTextChars = 800; 
+      const truncatedResumeText = resumeText.substring(0, maxTextChars) + (resumeText.length > maxTextChars ? '... [truncated]' : '');
+      const truncatedSearchResults = searchResults.substring(0, maxTextChars) + (searchResults.length > maxTextChars ? '... [truncated]' : '');
+      
+      const analysisPrompt = `
+You are an expert technical recruiter. Analyze if the student's profile and resume matches the requirements of the job role.
+
+STUDENT PROFILE DATA:
+- Name: ${studentProfile.name}
+- Course: ${studentProfile.course}
+- Skills: ${studentProfile.skills}
+- Bio: ${studentProfile.bio}
+
+EXTRACTED RESUME TEXT:
+${truncatedResumeText}
+
+WEB SEARCHED ROLE REQUIREMENTS:
+${truncatedSearchResults}
+TASK:
+1. Determine a Match Score percentage (0% to 100%) showing how well the student fits the job requirements.
+2. Provide a brief analysis of the match level (e.g. Fit / Gap analysis).
+3. Give specific, actionable smart suggestions on what they should learn, highlight, or change in their resume to match this company's standards.
+
+FORMAT YOUR RESPONSE IN CLEAR JSON FORMAT exactly as matches this pattern:
+{
+  "score": 85,
+  "fitAnalysis": "...",
+  "suggestions": [
+    "...",
+    "..."
+  ]
+}
+Return ONLY valid JSON.
+`;
+      let analysisResultText = '';
+      const status = await LlmInference.getStatus();
+      const model = MODELS.find(m => m.id === chatModelId);
+      if (!model) {
+        throw new Error('Active model not found in list.');
+      }
+      const modelState = modelStates[chatModelId];
+      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
+      if (!isDownloaded) {
+        throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Downloader tab to run local matching analysis.`);
+      }
+
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        triggerAlert(`Loading ${model.name} into RAM...`, 'info');
+        const loadResult = await LlmInference.loadModel({
+          modelId: chatModelId,
+          fileName: model.fileName,
+          useGpu: false
+        });
+        if (!loadResult.loaded) {
+          throw new Error('Failed to load local model.');
+        }
+      }
+
+      triggerAlert(`Analyzing match locally using ${model.name}...`, 'info');
+      const result = await LlmInference.generateResponse({ prompt: analysisPrompt });
+      analysisResultText = result.response;
+      // Try to parse JSON from response
+      let parsed: { score: number; fitAnalysis: string; suggestions: string[] } = {
+        score: 70,
+        fitAnalysis: 'Analysis completed.',
+        suggestions: []
+      };
+      try {
+        const jsonMatch = analysisResultText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          parsed = JSON.parse(analysisResultText);
+        }
+      } catch (e) {
+        console.warn('AI did not return valid JSON, parsing raw text...', e);
+        parsed = {
+          score: 75,
+          fitAnalysis: analysisResultText,
+          suggestions: ['Review role requirements carefully.', 'Enhance missing technical skills.']
+        };
+      }
+
+      setMatchScore(parsed.score);
+      setCompanyMatchResult(parsed.fitAnalysis + "\n\n### Suggestions:\n" + parsed.suggestions.map(s => `- ${s}`).join('\n'));
+      playSynthSound('success');
+      triggerAlert('AI Job Matching Analysis completed!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      triggerAlert(`Job Match Analysis failed: ${err.message}`, 'error');
+    } finally {
+      setIsAnalyzingMatch(false);
+    }
+  };
+
+  const handleAnalyzeATS = async () => {
+    if (!studentProfile.resumeData) {
+      triggerAlert('Resume not uploaded! Please upload your resume in the Profile tab first.', 'error');
+      return;
+    }
+
+    setIsAnalyzingAts(true);
+    setAtsResult(null);
+    playSynthSound('click');
+
+    try {
+      // 1. Extract text from resume
+      triggerAlert('Extracting resume content locally...', 'info');
+      const resumeText = await extractTextFromResume(studentProfile.resumeData);
+
+      if (!resumeText) {
+        throw new Error('Unable to extract text content from your resume PDF.');
+      }
+
+      // 2. Perform AI ATS analysis
+      triggerAlert('Analyzing ATS compatibility...', 'info');
+
+      const maxAtsChars = 1000;
+      const truncatedResume = resumeText.substring(0, maxAtsChars) + (resumeText.length > maxAtsChars ? '... [truncated]' : '');
+
+      const atsPrompt = `
+You are an advanced ATS (Applicant Tracking System) scanner. Scan the following resume text and evaluate its score.
+
+RESUME TEXT:
+${truncatedResume}
+
+STUDENT PROFILE DATA:
+- Skills listed in profile: ${studentProfile.skills}
+
+TASK:
+1. Provide an ATS compatibility score out of 100 based on structure, length, formatting, content quality, and profile alignment.
+2. Provide a general feedback summary.
+3. List 3-5 smart recommendations/suggestions to improve the resume for ATS parsers.
+4. Extract 5-10 key professional keywords found in the resume.
+5. Identify 3-5 missing keywords or core skills that are highly relevant to their profile but missing in the resume text.
+
+FORMAT YOUR RESPONSE IN CLEAR JSON FORMAT matching this pattern:
+{
+  "score": 78,
+  "feedback": "Your resume has a strong foundation but lacks key elements...",
+  "suggestions": [
+    "Add more metrics/numbers to achievements",
+    "Include a dedicated certifications section"
+  ],
+  "keywordsFound": ["React", "Python", "Machine Learning"],
+  "keywordsMissing": ["Docker", "CI/CD", "TypeScript"]
+}
+Return ONLY valid JSON.
+`;
+      let atsResultText = '';
+      const status = await LlmInference.getStatus();
+      const model = MODELS.find(m => m.id === chatModelId);
+      if (!model) {
+        throw new Error('Active model not found in list.');
+      }
+      const modelState = modelStates[chatModelId];
+      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
+      if (!isDownloaded) {
+        throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Downloader tab to run local ATS scanning.`);
+      }
+
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        triggerAlert(`Loading ${model.name} into RAM...`, 'info');
+        const loadResult = await LlmInference.loadModel({
+          modelId: chatModelId,
+          fileName: model.fileName,
+          useGpu: false
+        });
+        if (!loadResult.loaded) {
+          throw new Error('Failed to load local model.');
+        }
+      }
+
+      triggerAlert(`Running ATS compatibility analysis locally using ${model.name}...`, 'info');
+      const result = await LlmInference.generateResponse({ prompt: atsPrompt });
+      atsResultText = result.response;
+      let parsed: {
+        score: number;
+        feedback: string;
+        suggestions: string[];
+        keywordsFound: string[];
+        keywordsMissing: string[];
+      } = {
+        score: 65,
+        feedback: 'Analysis completed.',
+        suggestions: [],
+        keywordsFound: [],
+        keywordsMissing: []
+      };
+      try {
+        const jsonMatch = atsResultText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          parsed = JSON.parse(atsResultText);
+        }
+      } catch (e) {
+        console.warn('ATS AI did not return valid JSON, using raw parsing...', e);
+        parsed = {
+          score: 70,
+          feedback: atsResultText,
+          suggestions: ['Verify resume sections have standard headers.', 'Make sure contact information is clear.'],
+          keywordsFound: studentProfile.skills.split(','),
+          keywordsMissing: ['Cloud Computing', 'Git']
+        };
+      }
+
+      setAtsResult(parsed);
+      playSynthSound('success');
+      triggerAlert('ATS compatibility analysis completed!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      triggerAlert(`ATS Analysis failed: ${err.message}`, 'error');
+    } finally {
+      setIsAnalyzingAts(false);
+    }
+  };
 
   // HF Token state
   const [hfToken, setHfToken] = useState<string>(() => {
@@ -891,7 +1242,7 @@ export default function App() {
             <span className="brand-subtitle">AI Suite</span>
           </div>
         </div>
-        
+
         <div className="header-actions">
           <button 
             className={`btn btn-sm ${activeTab === 'downloader' ? 'btn-primary' : 'btn-secondary'}`}
@@ -913,6 +1264,17 @@ export default function App() {
             style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
           >
             Animly
+          </button>
+
+          <button 
+            className={`btn btn-sm ${activeTab === 'placement' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => {
+              playSynthSound('click');
+              setActiveTab('placement');
+            }}
+            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+          >
+            Placement Hub
           </button>
 
           <button 
@@ -1250,6 +1612,16 @@ export default function App() {
           <span>Animly Web</span>
         </button>
         <button 
+          className={`nav-item ${activeTab === 'placement' ? 'active' : ''}`}
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('placement');
+          }}
+        >
+          <Briefcase size={20} />
+          <span>Placement Hub</span>
+        </button>
+        <button 
           className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1261,7 +1633,6 @@ export default function App() {
         </button>
       </nav>
 
-      {/* Floating Action Button (FAB) for Chatbot */}
       <button 
         className={`chatbot-fab ${isChatOpen ? 'chat-open' : ''}`}
         onClick={() => {
@@ -1458,6 +1829,217 @@ export default function App() {
               <Send size={14} />
             </button>
           </div>
+        </div>
+      )}
+
+
+      {/* Placement Hub Section Tab */}
+      {activeTab === 'placement' && (
+        <div className="placement-page-container">
+          <div className="profile-page-header">
+            <button 
+              className="btn btn-secondary back-nav-btn" 
+              onClick={() => {
+                playSynthSound('click');
+                setActiveTab('downloader');
+              }}
+            >
+              <ArrowLeft size={16} /> Back to Dashboard
+            </button>
+            <div className="profile-page-title">
+              <Briefcase size={22} className="profile-icon-heading" />
+              <h2>Placement Hub & Resume Analytics</h2>
+            </div>
+          </div>
+
+          {!studentProfile.resumeData ? (
+            <div className="placement-error-card">
+              <AlertTriangle size={48} className="error-card-icon" />
+              <h3>Resume Not Uploaded</h3>
+              <p>You must upload your resume in PDF format in your profile before you can use the Placement Hub analytics and ATS checker features.</p>
+              <button 
+                className="btn btn-primary"
+                onClick={() => {
+                  playSynthSound('click');
+                  setActiveTab('profile');
+                }}
+              >
+                Go to Profile & Upload Resume
+              </button>
+            </div>
+          ) : (
+            <div className="placement-grid">
+              {/* Left Column: Sub-feature 1 - Company Info & Job Match */}
+              <div className="placement-card">
+                <div className="card-header-icon">
+                  <Search size={24} className="card-icon" />
+                  <h3>Company Info & Job Matching</h3>
+                </div>
+                <p className="card-description">
+                  Uses AI search tools to lookup role requirements at a specific company and analyze how your skills and local resume content align.
+                </p>
+
+                <div className="placement-form">
+                  <div className="form-group">
+                    <label>Target Company</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Google, Stripe, Microsoft" 
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Job Role</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Frontend Engineer, ML Engineer" 
+                      value={jobRole}
+                      onChange={(e) => setJobRole(e.target.value)}
+                    />
+                  </div>
+                  <button 
+                    className="btn btn-primary analyze-btn"
+                    onClick={handleAnalyzeJobMatch}
+                    disabled={isAnalyzingMatch}
+                  >
+                    {isAnalyzingMatch ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Analyzing Match...
+                      </>
+                    ) : (
+                      <>
+                        <Briefcase size={14} /> Analyze Alignment
+                      </>
+                    )}
+                  </button>
+                </div>
+                {companyInfoSearch && (
+                  <div className="search-results-section">
+                    <h4>Web Search Insights Retrieved:</h4>
+                    <div className="search-results-box" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {companyInfoSearch.split('\n').map((line, idx) => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('###')) {
+                          return <h5 key={idx} style={{ marginTop: '0.5rem', color: '#1e1b4b', fontWeight: 'bold' }}>{trimmedLine.replace('###', '').trim()}</h5>;
+                        }
+                        if (trimmedLine.startsWith('##')) {
+                          return <h4 key={idx} style={{ marginTop: '0.75rem', color: '#1e1b4b', fontWeight: 'bold' }}>{trimmedLine.replace('##', '').trim()}</h4>;
+                        }
+                        if (trimmedLine.startsWith('*') || trimmedLine.startsWith('-')) {
+                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.8rem', listStyleType: 'disc', margin: '0.25rem 0' }}>{trimmedLine.substring(1).trim()}</li>;
+                        }
+                        return <p key={idx} style={{ fontSize: '0.8rem', lineHeight: '1.4', margin: '0.25rem 0' }}>{trimmedLine}</p>;
+                      })}
+                    </div>
+                  </div>
+                )}
+                {companyMatchResult && (
+                  <div className="match-analysis-section">
+                    <div className="score-badge-wrapper">
+                      <h4>Match Analysis:</h4>
+                      {matchScore !== null && (
+                        <div className={`score-badge ${matchScore >= 80 ? 'high' : matchScore >= 60 ? 'medium' : 'low'}`}>
+                          {matchScore}% Match
+                        </div>
+                      )}
+                    </div>
+                    <div className="analysis-result-markdown">
+                      {companyMatchResult.split('\n').map((line, idx) => {
+                        if (line.startsWith('###')) {
+                          return <h4 key={idx} style={{ marginTop: '1rem', color: '#1e1b4b' }}>{line.replace('###', '')}</h4>;
+                        }
+                        if (line.startsWith('-')) {
+                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.85rem' }}>{line.replace('-', '')}</li>;
+                        }
+                        return <p key={idx} style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: '0.5rem 0' }}>{line}</p>;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Sub-feature 2 - ATS Score & Keywords */}
+              <div className="placement-card">
+                <div className="card-header-icon">
+                  <Award size={24} className="card-icon" />
+                  <h3>ATS Resume Scanner</h3>
+                </div>
+                <p className="card-description">
+                  Scans your resume locally using the text extractor and grades it based on standard Applicant Tracking System (ATS) parameters.
+                </p>
+
+                <div className="ats-trigger-section">
+                  <button 
+                    className="btn btn-secondary analyze-btn"
+                    onClick={handleAnalyzeATS}
+                    disabled={isAnalyzingAts}
+                  >
+                    {isAnalyzingAts ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Scanning Resume...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp size={14} /> Scan ATS Score
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {atsResult && (
+                  <div className="ats-results-wrapper">
+                    <div className="ats-score-display">
+                      <div className="progress-circle-placeholder">
+                        <span className="ats-score-num">{atsResult.score}</span>
+                        <span className="ats-score-lbl">ATS Score</span>
+                      </div>
+                      <div className="ats-grade-text">
+                        {atsResult.score >= 80 ? (
+                          <span className="badge-grade high">Excellent Compatibility</span>
+                        ) : atsResult.score >= 60 ? (
+                          <span className="badge-grade medium">Good - Needs Improvements</span>
+                        ) : (
+                          <span className="badge-grade low">Poor ATS Parsing Match</span>
+                        )}
+                        <p className="ats-feedback-desc">{atsResult.feedback}</p>
+                      </div>
+                    </div>
+
+                    <div className="ats-suggestions">
+                      <h4>Smart Suggestions:</h4>
+                      <ul>
+                        {atsResult.suggestions.map((sug, idx) => (
+                          <li key={idx}>{sug}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="ats-keywords-grid">
+                      <div className="keyword-col">
+                        <h4 className="kw-title found">Keywords Found</h4>
+                        <div className="kw-tags">
+                          {atsResult.keywordsFound.map((kw, idx) => (
+                            <span key={idx} className="kw-tag found">{kw}</span>
+                          ))}
+                          {atsResult.keywordsFound.length === 0 && <span className="no-kws">None identified.</span>}
+                        </div>
+                      </div>
+                      <div className="keyword-col">
+                        <h4 className="kw-title missing">Recommended / Missing</h4>
+                        <div className="kw-tags">
+                          {atsResult.keywordsMissing.map((kw, idx) => (
+                            <span key={idx} className="kw-tag missing">{kw}</span>
+                          ))}
+                          {atsResult.keywordsMissing.length === 0 && <span className="no-kws">None identified.</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

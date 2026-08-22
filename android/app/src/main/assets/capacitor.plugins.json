@@ -1,6 +1,0 @@
-[
-	{
-		"pkg": "capacitor-plugin-xframe",
-		"classpath": "com.visnalize.capacitor.plugins.xframe.XframePlugin"
-	}
-]
