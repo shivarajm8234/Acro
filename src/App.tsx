@@ -739,123 +739,202 @@ Priority choices: Critical, High, Medium, Low.`;
       return `Invalid target role or company ("${company}" / "${role}"). Please enter a specific company and job title (e.g. Google, Software Engineer).`;
     }
 
-    const query = `${expandedRole} at ${company} job requirements skills responsibilities`;
+    const excludeRegex = /\b(breach|scandal|stock|shares|lawsuit|court|allegations|controversy|sec|earnings|shareholder|marketwatch|investor)\b/i;
+    const includeRegex = /\b(skill|skills|tool|tools|analysis|analytic|data|sql|python|engineering|requirement|responsibility|qualification|experience|degree|software|technolog|stack|framework)\b/i;
 
-    // 1. Live DuckDuckGo HTML Web Search via CORS proxy
+    const queries = [
+      `"${expandedRole}" skills qualifications requirements ${company}`,
+      `"${expandedRole}" technical tools frameworks`,
+      `${expandedRole} job responsibilities ${company}`
+    ];
+
+    const resultsList: { title: string; snippet: string }[] = [];
+
+    for (const q of queries) {
+      try {
+        const wikiSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*`;
+        const res = await fetch(wikiSearchUrl, { signal: AbortSignal.timeout(4000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.query && Array.isArray(data.query.search)) {
+            for (const item of data.query.search) {
+              const cleanSnippet = (item.snippet || '').replace(/<[^>]+>/g, '').replace(/&#039;/g, "'").replace(/&quot;/g, '"').trim();
+              const fullText = `${item.title} ${cleanSnippet}`;
+              if (!excludeRegex.test(fullText) && (includeRegex.test(fullText) || item.title.toLowerCase().includes(role.toLowerCase()))) {
+                if (!resultsList.some(r => r.title === item.title) && cleanSnippet.length > 25) {
+                  resultsList.push({ title: item.title, snippet: cleanSnippet });
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Live web search error:', e);
+      }
+      if (resultsList.length >= 4) break;
+    }
+
+    // Company Overview
+    let companyOverview = '';
     try {
-      const ddgUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`)}`;
-      const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(6000) });
+      const wikiSummaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(company.trim())}`;
+      const res = await fetch(wikiSummaryUrl, { signal: AbortSignal.timeout(3000) });
       if (res.ok) {
-        const htmlText = await res.text();
-        const matches = [...htmlText.matchAll(/<a class="result__snippet[^">]*>([\s\S]*?)<\/a>/gi)];
-        const snippets = matches
-          .map(m => m[1].replace(/<[^>]+>/g, '').trim())
-          .filter(s => s && s.length > 25);
-
-        if (snippets.length > 0) {
-          return `### Web Search Results for ${expandedRole} at ${company}:\n\n` +
-            snippets.slice(0, 4).map((s, idx) => `**${idx + 1}.** ${s}`).join('\n\n');
-        }
-      }
-    } catch (e) {
-      console.warn('Live DDG search proxy timeout or error:', e);
-    }
-
-    // 2. Live Wikipedia REST API for company overview & tech focus
-    try {
-      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(company.trim())}`;
-      const wikiRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(4000) });
-      if (wikiRes.ok) {
-        const data = await wikiRes.json();
+        const data = await res.json();
         if (data.extract && data.extract.length > 40) {
-          return `### Wikipedia Company Overview for ${company}:\n${data.extract}\n\n*Target Role Requirements:* ${expandedRole}`;
+          companyOverview = `**Company Profile (${company})**: ${data.extract}`;
         }
       }
     } catch (e) {
-      console.warn('Wikipedia API lookup error:', e);
+      console.warn('Company summary error:', e);
     }
 
-    return `No live web search results could be retrieved for "${expandedRole}" at "${company}". Please verify your target company name or network connection.`;
+    if (resultsList.length > 0 || companyOverview) {
+      const formattedSnippets = resultsList.slice(0, 4).map((r, idx) => `**${idx + 1}. [${r.title}]**: ${r.snippet}`);
+      if (companyOverview) formattedSnippets.push(companyOverview);
+      return `### Live Web Search Insights for ${expandedRole} at ${company}:\n\n` + formattedSnippets.join('\n\n');
+    }
+
+    return `No live web search entries found for "${company}" (${expandedRole}).`;
   };
 
   const handleAnalyzeJobMatch = async () => {
-    if (!companyName.trim() || !jobRole.trim()) {
+    const cleanCompany = companyName.trim();
+    const cleanRole = jobRole.trim();
+
+    if (!cleanCompany || !cleanRole) {
       triggerAlert('Please enter both Company Name and Job Role.', 'error');
+      return;
+    }
+    if (cleanCompany.length < 2 || cleanRole.length < 2) {
+      triggerAlert('Target company and job role must be at least 2 characters long.', 'error');
       return;
     }
     if (!studentProfile.resumeData) {
       triggerAlert('Resume not uploaded. Please upload your resume in the Profile tab first.', 'error');
       return;
     }
+
+    // Guardrail: Detect nonsense/gibberish input or un-hirable inputs
+    if (/^[^aeiouy]{5,}$/i.test(cleanRole) || /^[0-9]+$/.test(cleanRole)) {
+      triggerAlert(`Invalid role format "${cleanRole}". Please enter a recognized professional job title (e.g. Data Analyst, Software Engineer).`, 'error');
+      return;
+    }
+
     setIsAnalyzingMatch(true);
     setCompanyMatchResult('');
     setCompanyInfoSearch('');
     setMatchScore(null);
     playSynthSound('click');
+
     try {
       const enableSearch = window.confirm('Would you like to search the web for real-time role requirements?');
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
       let searchResults = 'Use local AI knowledge for requirements of this role.';
       if (enableSearch) {
-        triggerAlert(`Searching web for ${jobRole} role requirements...`, 'info');
-        searchResults = await fetchWebSearch(companyName, jobRole);
+        triggerAlert(`Searching web for ${cleanRole} role requirements...`, 'info');
+        searchResults = await fetchWebSearch(cleanCompany, cleanRole);
         setCompanyInfoSearch(searchResults);
       } else {
         setCompanyInfoSearch('Web search disabled. Using local model knowledge.');
       }
+
       triggerAlert('Performing local RAG vector similarity search...', 'info');
-      const ragChunks = await ragService.queryRAGContext(`${jobRole} ${companyName}`, 3);
+      const ragChunks = await ragService.queryRAGContext(`${cleanRole} ${cleanCompany}`, 3);
       const ragContextFormatted = ragChunks.length > 0
         ? ragChunks.map((c, i) => `Context ${i + 1} (${c.source}): ${c.content.substring(0, 180)}`).join('\n')
         : 'No personal context found.';
-      const candidateSkills = (studentProfile.skills || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-      const matched = candidateSkills.filter(s => resumeText.toLowerCase().includes(s) || searchResults.toLowerCase().includes(s));
-      const calculatedScore = candidateSkills.length > 0 ? Math.round((matched.length / candidateSkills.length) * 100) : 75;
-      const realMatchScore = Math.max(52, Math.min(96, calculatedScore));
-      triggerAlert('Analyzing match with local AI...', 'info');
-      const truncatedResume = resumeText.substring(0, 350);
-      const truncatedSearch = searchResults.substring(0, 350);
-      const analysisPrompt = `You are a career advisor helping a student named ${studentProfile.name}.
-Their skills are: ${studentProfile.skills}
-Their personal background context (from their notes and resume):
-${ragContextFormatted}
-Their resume content:
+
+      const truncatedResume = resumeText.substring(0, 500);
+      const truncatedSearch = searchResults.substring(0, 500);
+
+      // Custom System Prompt with Strict Recruiter Guardrails
+      const analysisPrompt = `<start_of_turn>user
+System Instructions: You are Acro AI's Senior Technical Recruiter & Placement Auditor.
+Evaluate candidate "${studentProfile.name}" for target role "${cleanRole}" at "${cleanCompany}".
+
+CANDIDATE TECHNICAL PROFILE:
+Name: ${studentProfile.name}
+Declared Skills: ${studentProfile.skills}
+Resume Content Snippet:
 ${truncatedResume}
-Job role requirements for ${jobRole} at ${companyName} based on web research:
+
+TARGET ROLE CONTEXT:
+Target Company: ${cleanCompany}
+Target Role: ${cleanRole}
+Web Search Insights:
 ${truncatedSearch}
-Write a 2-sentence evaluation of how well they match the ${jobRole} role.
-Then list exactly 3 specific improvements they should make to be a better candidate.
-Output exactly in this format, no extra text:
-Evaluation: [your 2 sentence evaluation here]
-1. [first specific improvement]
-2. [second specific improvement]
-3. [third specific improvement]`;
+
+RETRIEVED CANDIDATE CONTEXT:
+${ragContextFormatted}
+
+CRITICAL EVALUATION GUARDRAILS:
+1. Calculate a realistic MATCH SCORE from 0 to 100 based strictly on technical skill alignment.
+   - If candidate skills DO NOT match target role requirements (e.g. Python/React developer applying for hardware/appliance engineering or nonsensical role), assign a low score (e.g. 10% to 35%). DO NOT inflate scores.
+2. Provide a 2-sentence honest evaluation detailing exact matching skills vs missing requirements.
+3. Provide 3 specific, actionable recommendations for bridging the skill gap.
+
+OUTPUT FORMAT (Follow strictly):
+MATCH SCORE: <number 0-100>
+EVALUATION: <2 sentences>
+1. <specific recommendation 1>
+2. <specific recommendation 2>
+3. <specific recommendation 3>
+<end_of_turn>
+<start_of_turn>model
+`;
+
       triggerAlert(`Analyzing match using ${cloudSettings.useCloud ? 'Cloud API' : 'local AI'}...`, 'info');
       const result = await runAiInference(analysisPrompt);
       const analysisResultText = result.response || '';
+
+      let extractedScore: number | null = null;
       let fitAnalysis = '';
       const suggestions: string[] = [];
+
+      // Extract Match Score directly from AI reasoning
+      const scoreMatch = analysisResultText.match(/MATCH SCORE:\s*(\d+)/i);
+      if (scoreMatch) {
+        extractedScore = Math.max(0, Math.min(100, parseInt(scoreMatch[1], 10)));
+      }
+
       const lines = analysisResultText.split('\n').map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
-        if (/^evaluation:/i.test(line)) {
-          fitAnalysis = line.replace(/^evaluation:/i, '').trim();
+        if (/^EVALUATION:/i.test(line)) {
+          fitAnalysis = line.replace(/^EVALUATION:/i, '').trim();
         } else if (/^\d+\.\s+.+/.test(line)) {
           const sug = line.replace(/^\d+\.\s+/, '').trim();
           if (sug && !/^\[.*\]$/.test(sug)) suggestions.push(sug);
+        } else if (/^SUGGESTION\s*\d*:/i.test(line)) {
+          const sug = line.replace(/^SUGGESTION\s*\d*:/i, '').trim();
+          if (sug) suggestions.push(sug);
         }
       }
+
       if (!fitAnalysis) {
-        const firstSentence = lines.find(l => l.length > 30 && !/^\d+\./.test(l) && !/^evaluation:/i.test(l));
-        fitAnalysis = firstSentence || `Candidate shows ${realMatchScore}% alignment with ${companyName}'s ${jobRole} role based on skills: ${matched.join(', ') || candidateSkills.slice(0, 3).join(', ')}.`;
+        const firstSentence = lines.find(l => l.length > 30 && !/^\d+\./.test(l) && !/^MATCH SCORE:/i.test(l));
+        fitAnalysis = firstSentence || `Candidate evaluation for ${cleanCompany}'s ${cleanRole} role based on skills: ${studentProfile.skills}.`;
       }
+
+      // Algorithmic Fallback Score if AI score parsing missed (No hardcoded 96% caps!)
+      if (extractedScore === null) {
+        const candidateSkills = (studentProfile.skills || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        const matched = candidateSkills.filter(s => resumeText.toLowerCase().includes(s) || searchResults.toLowerCase().includes(s));
+        if (candidateSkills.length === 0) {
+          extractedScore = 20;
+        } else {
+          extractedScore = Math.round((matched.length / candidateSkills.length) * 100);
+        }
+      }
+
       if (suggestions.length === 0) {
-        const missingSkills = ['system design', 'low-level coding', 'distributed systems', 'performance optimization', 'cloud architecture'].filter(s => !resumeText.toLowerCase().includes(s));
-        suggestions.push(`Highlight your ${candidateSkills.slice(0, 2).join(' and ')} projects with measurable impact metrics.`);
-        suggestions.push(`Build and showcase a project demonstrating ${missingSkills[0] || 'system design'} skills relevant to ${companyName}'s scale.`);
-        suggestions.push(`Add quantifiable achievements to your resume — ${companyName} looks for impact metrics in ${jobRole} candidates.`);
+        suggestions.push(`Highlight projects relevant to ${cleanRole} in your resume.`);
+        suggestions.push(`Acquire core competencies required for ${cleanCompany}'s ${cleanRole} position.`);
+        suggestions.push(`Include quantifiable metrics and achievements for target skills.`);
       }
-      setMatchScore(realMatchScore);
+
+      setMatchScore(extractedScore);
       setCompanyMatchResult(fitAnalysis + '\n\n### Suggestions:\n' + suggestions.map(s => `- ${s}`).join('\n'));
       playSynthSound('success');
       triggerAlert('AI Job Match Analysis completed.', 'success');
@@ -887,7 +966,7 @@ Evaluation: [your 2 sentence evaluation here]
       const profileSkills = (studentProfile.skills || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
       const matchedSkills = profileSkills.filter(skill => resumeText.toLowerCase().includes(skill));
       const skillScore = profileSkills.length > 0 ? (matchedSkills.length / profileSkills.length) * 30 : 20;
-      const realAtsScore = Math.max(48, Math.min(97, Math.round(sectionScore + lengthScore + skillScore)));
+      const realAtsScore = Math.max(0, Math.min(100, Math.round(sectionScore + lengthScore + skillScore)));
       triggerAlert('Running ATS compatibility analysis locally...', 'info');
       const truncatedResume = resumeText.substring(0, 1000);
       const atsPrompt = `Analyze ATS compatibility for candidate resume.
