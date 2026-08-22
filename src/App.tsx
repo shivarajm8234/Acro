@@ -863,9 +863,13 @@ export default function App() {
     triggerAlert(`Generating PDF report for "${note.title}" in background...`, 'info');
     setTimeout(() => {
       const reportTitle = `${note.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_Report.pdf`;
-      const pdfHeader = `%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>\nendobj\n4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n5 0 obj\n<< /Length 220 >>\nstream\nBT\n/F1 18 Tf\n50 740 Td\n(ACRO ACADEMIC INTELLIGENCE REPORT) Tj\n/F1 12 Tf\n0 -30 Td\n(Title: ${note.title.substring(0, 40)}) Tj\n0 -20 Td\n(Date: ${note.date}) Tj\n0 -30 Td\n(Content Summary:) Tj\n0 -20 Td\n(${note.content.substring(0, 60).replace(/[()]/g, '')}) Tj\nET\nendstream\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000242 00000 n \n0000000315 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n585\n%%EOF`;
+      const pdfContent = generateRobustPdf(
+        note.title.toUpperCase(),
+        note.subtitle || 'Academic Study Document',
+        note.content
+      );
 
-      const base64Data = btoa(pdfHeader);
+      const base64Data = btoa(unescape(encodeURIComponent(pdfContent)));
       const dataUrl = `data:application/pdf;base64,${base64Data}`;
       const generatedAt = new Date().toLocaleString();
 
@@ -1121,9 +1125,12 @@ Provide clear sections:
 
       if (outputType === 'report' || outputType === 'pdf') {
         const reportTitle = `${noteToAnalyze.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_Report.pdf`;
-        const sanitizedContent = noteToAnalyze.content.replace(/[()]/g, '');
-        const pdfHeader = `%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>\nendobj\n4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n5 0 obj\n<< /Length 480 >>\nstream\nBT\n/F1 16 Tf\n50 740 Td\n(ACRO ACADEMIC INTELLIGENCE REPORT) Tj\n/F1 10 Tf\n0 -25 Td\n(Title: ${noteToAnalyze.title.substring(0, 45)}) Tj\n0 -15 Td\n(Generated: ${new Date().toLocaleDateString()}) Tj\n0 -25 Td\n(1. Executive Summary & Overview:) Tj\n0 -15 Td\n(${sanitizedContent.substring(0, 75)}) Tj\n0 -25 Td\n(2. Actionable Deliverables & Key Advantages:) Tj\n0 -15 Td\n(Extracted Tasks: ${approvedTasks.length} items verified and cataloged.) Tj\n0 -15 Td\n(Status: 100% Completed & Integrated into Workspace.) Tj\nET\nendstream\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000242 00000 n \n0000000315 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n820\n%%EOF`;
-        const base64Data = btoa(pdfHeader);
+        const pdfContent = generateRobustPdf(
+          'ACRO ACADEMIC INTELLIGENCE REPORT',
+          `Analysis Report for: ${noteToAnalyze.title}`,
+          aiReportSynthesis
+        );
+        const base64Data = btoa(unescape(encodeURIComponent(pdfContent)));
         const dataUrl = `data:application/pdf;base64,${base64Data}`;
         generatedReportObj = {
           name: reportTitle,
@@ -1275,25 +1282,70 @@ Provide only the processed, synthesized output with zero extra conversational fi
     const cleanDate = escapePdfText(new Date().toLocaleDateString());
 
     const rawLines = body.split('\n');
-    const wrappedLines: string[] = [];
-    const maxLineLen = 75;
+    const processedLines: { text: string; type: 'header' | 'bullet' | 'normal' }[] = [];
 
     for (const line of rawLines) {
-      let temp = line;
-      if (temp.length === 0) {
-        wrappedLines.push('');
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        processedLines.push({ text: '', type: 'normal' });
         continue;
       }
-      while (temp.length > maxLineLen) {
-        let splitIdx = temp.lastIndexOf(' ', maxLineLen);
+
+      let cleanText = trimmed
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .replace(/__(.*?)__/g, '$1')
+        .replace(/_(.*?)_/g, '$1')
+        .replace(/`(.*?)`/g, '$1');
+
+      if (cleanText.startsWith('### ') || cleanText.startsWith('## ') || cleanText.startsWith('# ')) {
+        const headerText = cleanText.replace(/^#+\s+/, '');
+        processedLines.push({ text: headerText, type: 'header' });
+      } else if (cleanText.startsWith('* ') || cleanText.startsWith('- ')) {
+        const bulletText = '  • ' + cleanText.substring(2).trim();
+        processedLines.push({ text: bulletText, type: 'bullet' });
+      } else if (/^\d+\.\s+/.test(cleanText)) {
+        const listText = '  ' + cleanText;
+        processedLines.push({ text: listText, type: 'bullet' });
+      } else {
+        processedLines.push({ text: cleanText, type: 'normal' });
+      }
+    }
+
+    const wrappedLines: { text: string; type: 'header' | 'bullet' | 'normal' }[] = [];
+    const maxLineLenNormal = 75;
+    const maxLineLenBullet = 70;
+
+    for (const item of processedLines) {
+      if (item.text.length === 0) {
+        wrappedLines.push({ text: '', type: 'normal' });
+        continue;
+      }
+
+      let temp = item.text;
+      const maxLen = item.type === 'bullet' ? maxLineLenBullet : maxLineLenNormal;
+
+      let isFirst = true;
+      while (temp.length > maxLen) {
+        let splitIdx = temp.lastIndexOf(' ', maxLen);
         if (splitIdx === -1 || splitIdx < 50) {
-          splitIdx = maxLineLen;
+          splitIdx = maxLen;
         }
-        wrappedLines.push(temp.substring(0, splitIdx));
+        
+        let chunk = temp.substring(0, splitIdx);
+        if (!isFirst && item.type === 'bullet') {
+          chunk = '    ' + chunk.trim();
+        }
+        wrappedLines.push({ text: chunk, type: item.type });
+        
         temp = temp.substring(splitIdx).trim();
+        isFirst = false;
       }
       if (temp.length > 0) {
-        wrappedLines.push(temp);
+        if (!isFirst && item.type === 'bullet') {
+          temp = '    ' + temp.trim();
+        }
+        wrappedLines.push({ text: temp, type: item.type });
       }
     }
 
@@ -1310,13 +1362,16 @@ Provide only the processed, synthesized output with zero extra conversational fi
     currentLines.push('0 -15 Td');
     currentLines.push(`(Date: ${cleanDate}) Tj`);
     currentLines.push('0 -25 Td');
-    currentLines.push('(Content Summary & Highlights:) Tj');
+    currentLines.push('(Content & Academic Intelligence Output:) Tj');
     currentLines.push('0 -20 Td');
 
     let currentY = 658;
 
-    for (const line of wrappedLines) {
-      if (currentY < 60) {
+    for (const lineObj of wrappedLines) {
+      const isHeader = lineObj.type === 'header';
+      const spacing = isHeader ? 22 : 15;
+
+      if (currentY - spacing < 60) {
         currentLines.push('ET');
         pages.push(currentLines.join('\n'));
         
@@ -1329,9 +1384,15 @@ Provide only the processed, synthesized output with zero extra conversational fi
         currentY = 715;
       }
       
-      currentLines.push(`(${escapePdfText(line)}) Tj`);
-      currentLines.push('0 -15 Td');
-      currentY -= 15;
+      if (isHeader) {
+        currentLines.push('/F1 12 Tf');
+      } else {
+        currentLines.push('/F1 10 Tf');
+      }
+
+      currentLines.push(`(${escapePdfText(lineObj.text)}) Tj`);
+      currentLines.push(`0 -${spacing} Td`);
+      currentY -= spacing;
     }
     
     currentLines.push('ET');
@@ -1370,7 +1431,6 @@ Provide only the processed, synthesized output with zero extra conversational fi
     pdf += `trailer\n<< /Size ${currentObjId} /Root ${catalogId} 0 R >>\n`;
     pdf += `startxref\n10\n%%EOF`;
     
-    // Fix capacitor pdf parse matching
     return pdf.replace(/\nstream_end\n/g, '\n');
   };
 
