@@ -42,3 +42,8 @@ dist/
 dist-ssr/
 android/app/capacitor.build.gradle
 android/capacitor-cordova-android-plugins/
+.agent
+.claude
+.impeccable
+.opencode
+.gemini
