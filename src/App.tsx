@@ -58,6 +58,103 @@ interface AIModel {
   fileName: string;
 }
 
+export interface CopilotTool {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
+export interface CopilotGroup {
+  id: string;
+  name: string;
+  icon: string;
+  tools: CopilotTool[];
+}
+
+export const AI_COPILOT_GROUPS: CopilotGroup[] = [
+  {
+    id: "convert",
+    name: "Convert Format",
+    icon: "Folder",
+    tools: [
+      { id: "convert_study_notes", name: "Convert to Study Notes", prompt: "Convert the following note content into structured, well-formatted study notes with bullet points and clear headings." },
+      { id: "convert_assignment_draft", name: "Assignment Draft", prompt: "Format the note content as a formal academic assignment draft with standard layout, cover outline, and sections." },
+      { id: "convert_project_report", name: "Project Report", prompt: "Synthesize the note content into a comprehensive project report structure, including goals, scope, and implementation summary." },
+      { id: "convert_lab_report", name: "Lab Report", prompt: "Structure the note content as a scientific lab report with Objective, Apparatus/Setup, Observations, and Conclusion." },
+      { id: "convert_research_outline", name: "Research Outline", prompt: "Translate the note content into a detailed research outline, establishing the thesis statement, key arguments, and literature scope." },
+      { id: "convert_technical_doc", name: "Technical Documentation", prompt: "Generate clean technical documentation for developers based on the note content, highlighting specs, requirements, and usage guidelines." },
+      { id: "convert_readme", name: "README Markdown", prompt: "Generate a professional project README markdown file based on the note content." },
+      { id: "convert_abstract", name: "Abstract", prompt: "Summarize the note content into a concise, professional academic abstract of 150-250 words." },
+      { id: "convert_introduction", name: "Introduction Section", prompt: "Expand the note content into a formal introduction section, establishing the core problem and context." },
+      { id: "convert_methodology", name: "Methodology", prompt: "Formulate a detailed methodology section from the note content, outlining the system workflow, steps, and procedures." },
+      { id: "convert_conclusion", name: "Conclusion Section", prompt: "Draft a solid research conclusion summarizing the note outcomes, limitations, and future work." },
+      { id: "convert_meeting_minutes", name: "Meeting Minutes", prompt: "Format the note content as official meeting minutes, detailing attendees, discussions, action items, and next steps." },
+      { id: "convert_seminar_notes", name: "Seminar Notes Summary", prompt: "Synthesize the note content as structured seminar/webinar takeaways." },
+      { id: "convert_study_material", name: "Comprehensive Study Material", prompt: "Turn the note content into a comprehensive, high-quality, readable study guide." },
+      { id: "convert_revision_doc", name: "Quick Revision Document", prompt: "Compress the note content into a fast-track revision reference guide." }
+    ]
+  },
+  {
+    id: "study",
+    name: "Study & Questions",
+    icon: "GraduationCap",
+    tools: [
+      { id: "study_flashcards", name: "Generate Flashcards", prompt: "Create a list of Q&A flashcard pairs based on the key concepts in the note. Format clearly as Question / Answer pairs." },
+      { id: "study_mcqs", name: "Generate Multiple Choice Questions (MCQs)", prompt: "Create 5 multiple choice questions (MCQs) with 4 options each and a marked correct answer based on the note content." },
+      { id: "study_viva", name: "Generate Viva Prep Questions", prompt: "Generate 5 likely oral examination / Viva questions along with short model answers based on the note content." },
+      { id: "study_imp_questions", name: "Generate Important Exam Questions", prompt: "Identify the top 5 high-yield, long-form academic exam questions based on the note contents." },
+      { id: "study_explain", name: "Explain Core Concepts", prompt: "Deconstruct and deeply explain the core academic concepts mentioned in the note text using clear, easy-to-understand analogies." },
+      { id: "study_revision_summaries", name: "Generate Revision Summaries", prompt: "Produce a high-retention, point-by-point summary designed for last-minute exam revision." },
+      { id: "study_syllabus", name: "Detect & Map Syllabus Topics", prompt: "Examine the note content and map out the likely curriculum/syllabus unit topics, highlighting key domains." },
+      { id: "study_coverage", name: "Track Topic Coverage", prompt: "Analyze the level of academic coverage of the main concepts in the note and assign a coverage score (low, medium, high) with reasoning." },
+      { id: "study_missing", name: "Find Missing Curriculum Topics", prompt: "Review the note content and identify related or adjacent prerequisite topics that are missing but necessary for full understanding." },
+      { id: "study_checklist", name: "Generate Study Checklists", prompt: "Construct an actionable, checkbox-style study checklist for mastering the note material." },
+      { id: "study_revision_plans", name: "Create 7-Day Revision Plan", prompt: "Design a customized 7-day spaced repetition revision schedule specifically tailored to the note content." },
+      { id: "study_connect", name: "Connect Notes by Subject", prompt: "List potential cross-disciplinary connections and subjects that tie into the note content." }
+    ]
+  },
+  {
+    id: "edit",
+    name: "Edit & Polish",
+    icon: "Pencil",
+    tools: [
+      { id: "edit_grammar", name: "Grammar Correction", prompt: "Review the note text and correct all grammatical mistakes while retaining the original meaning and technical terms." },
+      { id: "edit_spelling", name: "Spelling Correction", prompt: "Find and fix all spelling typos in the note text." },
+      { id: "edit_rewrite", name: "Rewrite Content", prompt: "Rewrite the note content to improve flow, sentence variety, and clarity while retaining all original facts." },
+      { id: "edit_shorten", name: "Shorten Text", prompt: "Condense the note content into a tight, high-density summary, removing any fluff or filler words." },
+      { id: "edit_expand", name: "Expand Details", prompt: "Elaborate on the points mentioned in the note content, adding context and academic depth." },
+      { id: "edit_simplify", name: "Simplify Concepts", prompt: "Explain the note content in simple terms, using an ELI5 (Explain Like I'm 5) style." },
+      { id: "edit_professional", name: "Professional Rewrite", prompt: "Rewrite the note content in a highly professional, academic, and scientific tone suitable for publication." },
+      { id: "edit_bullets", name: "Convert to Bullet Points", prompt: "Re-organize the note content strictly into a clear, hierarchical bulleted list." },
+      { id: "edit_table", name: "Convert to Matrix/Table", prompt: "Identify the main parameters or items in the note and organize them into a clean Markdown table comparison." },
+      { id: "edit_summary", name: "Summary Generation", prompt: "Provide a concise executive summary of the note." },
+      { id: "edit_translate", name: "Translate to Academic English", prompt: "Polish and translate the note content into clear, standard academic English." },
+      { id: "edit_continue", name: "Continue Writing", prompt: "Predict the logical next paragraph of the note and continue writing it in the same style." },
+      { id: "edit_titles", name: "Generate Creative Titles", prompt: "Suggest 5 alternative, catchy, and professional academic titles for the note." }
+    ]
+  },
+  {
+    id: "smart",
+    name: "Analytics & Smart Tools",
+    icon: "Lightning",
+    tools: [
+      { id: "smart_summarize", name: "Offline Note Summarization", prompt: "Produce a high-quality offline summarization containing only verified details." },
+      { id: "smart_key_points", name: "Key-Point Extraction", prompt: "Extract the exact key statements and findings from the note content, formatted as a checklist." },
+      { id: "smart_task_detect", name: "Actionable Task Detection", prompt: "Analyze the note content to detect actionable items, assignments, or deadlines." },
+      { id: "smart_deadline_detect", name: "Deadline Detection", prompt: "Identify any calendar days, times, or milestones mentioned in the note." },
+      { id: "smart_reminder", name: "Reminder Suggestions", prompt: "Suggest timely reminders and follow-up activities based on the note." },
+      { id: "smart_categorize", name: "Automatic Categorization", prompt: "Suggest the single best academic category for this note out of: Assignment, Exam, Project, Research, Placement, Portfolio, Personal." },
+      { id: "smart_tags", name: "Automatic Tagging", prompt: "Generate 5 relevant tags/keywords for this note." },
+      { id: "smart_keywords", name: "Keyword Extraction", prompt: "Extract the top 10 most relevant technical keywords and entities from the note." },
+      { id: "smart_entities", name: "Entity & Tech Stack Detection", prompt: "Detect and list all software libraries, tools, formulas, and academic entities mentioned." },
+      { id: "smart_related", name: "Related-Note Suggestions", prompt: "Propose other study notes or topics that the user should review alongside this note." },
+      { id: "smart_duplicate", name: "Duplicate-Note Detection", prompt: "Analyze the note content and report whether it contains highly redundant info." },
+      { id: "smart_qa", name: "Question Answering Model", prompt: "Formulate answers to the most common questions a student would ask about this note." },
+      { id: "smart_suggestions", name: "Contextual Note Suggestions", prompt: "Suggest next steps, related reading list, or future study milestones based on the note." }
+    ]
+  }
+];
+
 const MODELS: AIModel[] = [
   {
     id: 'gemma-4-e2b-it',
@@ -409,6 +506,7 @@ export default function App() {
   // Notepad
   const [isAddNoteOpen, setIsAddNoteOpen] = useState<boolean>(false);
   const [newNoteTitle, setNewNoteTitle] = useState<string>('');
+  const [newNoteSubtitle, setNewNoteSubtitle] = useState<string>('');
   const [newNoteContent, setNewNoteContent] = useState<string>('');
   const [activeViewNote, setActiveViewNote] = useState<NoteItem | null>(null);
 
@@ -586,6 +684,7 @@ export default function App() {
   interface NoteItem {
     id: string;
     title: string;
+    subtitle?: string;
     content: string;
     date: string;
     isPinned?: boolean;
@@ -638,25 +737,35 @@ export default function App() {
   const [isAnalyzingNoteId, setIsAnalyzingNoteId] = useState<string | null>(null);
 
   const handleAddNote = () => {
-    if (!newNoteTitle.trim() && !newNoteContent.trim()) {
-      triggerAlert('Please enter a title or content for your note.', 'error');
+    if (!newNoteContent.trim() && (selectedCopilotGroupId !== 'custom' || !newNoteTitle.trim())) {
+      triggerAlert('Please enter content for your note.', 'error');
       return;
     }
     playSynthSound('success');
     
-    // Auto-generate title if missing
-    let finalTitle = newNoteTitle.trim();
-    if (!finalTitle && newNoteContent.trim()) {
-      const firstLine = newNoteContent.trim().split('\n')[0];
-      finalTitle = firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine;
-      if (/dbms|sql|database/i.test(newNoteContent)) finalTitle = 'DBMS Study Note';
-      else if (/ml|machine learning|ai|model/i.test(newNoteContent)) finalTitle = 'ML & AI Notes';
+    let finalTitle = '';
+    let finalSubtitle: string | undefined = undefined;
+
+    if (selectedCopilotGroupId === 'custom') {
+      finalTitle = newNoteTitle.trim();
+      if (!finalTitle && newNoteContent.trim()) {
+        const firstLine = newNoteContent.trim().split('\n')[0];
+        finalTitle = firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine;
+      }
+      if (!finalTitle) finalTitle = 'Untitled Note';
+      finalSubtitle = newNoteSubtitle.trim() || undefined;
+    } else {
+      const group = AI_COPILOT_GROUPS.find(g => g.id === selectedCopilotGroupId);
+      finalTitle = group ? group.name : 'Untitled Note';
+      
+      const tool = group?.tools.find(t => t.id === selectedCopilotToolId);
+      finalSubtitle = tool ? tool.name : undefined;
     }
-    if (!finalTitle) finalTitle = 'Untitled Note';
 
     const newNote: NoteItem = {
       id: Date.now().toString(),
       title: finalTitle,
+      subtitle: finalSubtitle,
       content: newNoteContent.trim(),
       date: new Date().toLocaleDateString(),
       isAiAnalyzed: false,
@@ -670,6 +779,7 @@ export default function App() {
     setNotes(prev => [newNote, ...prev]);
     ragService.ingestNote(newNote.id, newNote.title, newNote.content);
     setNewNoteTitle('');
+    setNewNoteSubtitle('');
     setNewNoteContent('');
     setAttachedFile(null);
     setIsAddNoteOpen(false);
@@ -740,6 +850,13 @@ export default function App() {
 
   const [previewPdfModal, setPreviewPdfModal] = useState<{ name: string; dataUrl: string } | null>(null);
   const [pdfPreviewTab, setPdfPreviewTab] = useState<'pdf' | 'text'>('pdf');
+  const [selectedCopilotGroupId, setSelectedCopilotGroupId] = useState<string>('custom');
+  const [selectedCopilotToolId, setSelectedCopilotToolId] = useState<string>('freestyle_custom');
+  const [copilotCustomFocus, setCopilotCustomFocus] = useState<string>('');
+  const [isExecutingCopilot, setIsExecutingCopilot] = useState<boolean>(false);
+  const [copilotOutput, setCopilotOutput] = useState<string>('');
+  const [customPdfTitle, setCustomPdfTitle] = useState<string>('');
+  const [customPdfSubtitle, setCustomPdfSubtitle] = useState<string>('');
 
   const handleGenerateAssignmentPdf = (note: NoteItem) => {
     playSynthSound('click');
@@ -1020,18 +1137,18 @@ Provide clear sections:
         };
 
         // Auto trigger download notification & file save without requiring button click
-        try {
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = dataUrl;
-          a.download = reportTitle;
-          a.target = '_blank';
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => { document.body.removeChild(a); }, 1000);
-        } catch (e) {
-          console.warn('Auto download error:', e);
-        }
+        // try {
+        //   const a = document.createElement('a');
+        //   a.style.display = 'none';
+        //   a.href = dataUrl;
+        //   a.download = reportTitle;
+        //   a.target = '_blank';
+        //   document.body.appendChild(a);
+        //   a.click();
+        //   setTimeout(() => { document.body.removeChild(a); }, 1000);
+        // } catch (e) {
+        //   console.warn('Auto download error:', e);
+        // }
       } else if (outputType === 'image') {
         outputArtifact = {
           title: `Visual Concept for ${noteToAnalyze.title}`,
@@ -1063,12 +1180,256 @@ Provide clear sections:
         setActiveViewNote(updatedNote);
       }
 
-      triggerAlert(`AI Work Completed (100%) - ${outputType.toUpperCase()} generated and downloaded!`, 'success');
+      triggerAlert(`AI Work Completed (100%) - ${outputType.toUpperCase()} generated.`, 'success');
       playSynthSound('success');
     } catch (err: any) {
       console.error(err);
     } finally {
       setIsAnalyzingNoteId(null);
+    }
+  };
+
+  const handleExecuteCopilotAction = async (toolId: string) => {
+    if (!activeViewNote) return;
+    
+    let selectedPrompt = '';
+    let toolName = '';
+    
+    if (toolId === 'freestyle_custom') {
+      if (!copilotCustomFocus.trim()) {
+        triggerAlert('Please provide custom prompt/instructions for Freestyle Action', 'error');
+        return;
+      }
+      selectedPrompt = copilotCustomFocus.trim();
+      toolName = 'Freestyle Custom Action';
+    } else {
+      for (const group of AI_COPILOT_GROUPS) {
+        const tool = group.tools.find(t => t.id === toolId);
+        if (tool) {
+          selectedPrompt = tool.prompt;
+          toolName = tool.name;
+          break;
+        }
+      }
+    }
+    
+    if (!selectedPrompt) return;
+    
+    setIsExecutingCopilot(true);
+    setCopilotOutput('');
+    triggerAlert(`Running offline copilot: ${toolName}...`, 'info');
+    
+    try {
+      const focusText = (toolId !== 'freestyle_custom' && copilotCustomFocus.trim()) 
+        ? `\nFocus topic/Custom instruction: ${copilotCustomFocus.trim()}` 
+        : '';
+      const prompt = `You are a professional Academic AI assistant.
+Perform the following task: ${selectedPrompt}${focusText}
+
+NOTE CONTENT TO PROCESS:
+"${activeViewNote.content}"
+
+Provide only the processed, synthesized output with zero extra conversational filler before or after.`;
+
+      const result = await runAiInference(prompt);
+      const textResponse = (result.response || '').trim();
+      setCopilotOutput(textResponse);
+      triggerAlert(`${toolName} synthesis complete!`, 'success');
+      playSynthSound('success');
+    } catch (e: any) {
+      console.error(e);
+      triggerAlert('Failed to execute AI Copilot action', 'error');
+    } finally {
+      setIsExecutingCopilot(false);
+    }
+  };
+
+  const handleApplyCopilotOutput = (mode: 'replace' | 'append') => {
+    if (!activeViewNote || !copilotOutput) return;
+    playSynthSound('click');
+    
+    let updatedContent = '';
+    if (mode === 'replace') {
+      updatedContent = copilotOutput;
+    } else {
+      updatedContent = activeViewNote.content + '\n\n' + copilotOutput;
+    }
+    
+    const updatedNote = { ...activeViewNote, content: updatedContent };
+    setNotes(prev => prev.map(n => n.id === activeViewNote.id ? updatedNote : n));
+    setActiveViewNote(updatedNote);
+    triggerAlert(`Note updated successfully (${mode === 'replace' ? 'Replaced' : 'Appended'})`, 'success');
+  };
+
+  const generateRobustPdf = (title: string, subtitle: string, body: string): string => {
+    const escapePdfText = (text: string) => {
+      return text
+        .replace(/\\/g, '\\\\')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)')
+        .trim();
+    };
+
+    const cleanTitle = escapePdfText(title);
+    const cleanSubtitle = escapePdfText(subtitle);
+    const cleanDate = escapePdfText(new Date().toLocaleDateString());
+
+    const rawLines = body.split('\n');
+    const wrappedLines: string[] = [];
+    const maxLineLen = 75;
+
+    for (const line of rawLines) {
+      let temp = line;
+      if (temp.length === 0) {
+        wrappedLines.push('');
+        continue;
+      }
+      while (temp.length > maxLineLen) {
+        let splitIdx = temp.lastIndexOf(' ', maxLineLen);
+        if (splitIdx === -1 || splitIdx < 50) {
+          splitIdx = maxLineLen;
+        }
+        wrappedLines.push(temp.substring(0, splitIdx));
+        temp = temp.substring(splitIdx).trim();
+      }
+      if (temp.length > 0) {
+        wrappedLines.push(temp);
+      }
+    }
+
+    let pages: string[] = [];
+    let currentLines: string[] = [];
+    
+    currentLines.push('BT');
+    currentLines.push('/F1 14 Tf');
+    currentLines.push('50 740 Td');
+    currentLines.push(`(${cleanTitle}) Tj`);
+    currentLines.push('/F1 10 Tf');
+    currentLines.push('0 -22 Td');
+    currentLines.push(`(Subtitle: ${cleanSubtitle}) Tj`);
+    currentLines.push('0 -15 Td');
+    currentLines.push(`(Date: ${cleanDate}) Tj`);
+    currentLines.push('0 -25 Td');
+    currentLines.push('(Content Summary & Highlights:) Tj');
+    currentLines.push('0 -20 Td');
+
+    let currentY = 658;
+
+    for (const line of wrappedLines) {
+      if (currentY < 60) {
+        currentLines.push('ET');
+        pages.push(currentLines.join('\n'));
+        
+        currentLines = [];
+        currentLines.push('BT');
+        currentLines.push('/F1 10 Tf');
+        currentLines.push('50 740 Td');
+        currentLines.push(`(${cleanTitle} - Continued) Tj`);
+        currentLines.push('0 -25 Td');
+        currentY = 715;
+      }
+      
+      currentLines.push(`(${escapePdfText(line)}) Tj`);
+      currentLines.push('0 -15 Td');
+      currentY -= 15;
+    }
+    
+    currentLines.push('ET');
+    pages.push(currentLines.join('\n'));
+
+    const numPages = pages.length;
+    const pageObjIds: number[] = [];
+    const contentObjIds: number[] = [];
+    
+    let currentObjId = 1;
+    const catalogId = currentObjId++;
+    const pagesTreeId = currentObjId++;
+    const fontId = currentObjId++;
+    
+    for (let i = 0; i < numPages; i++) {
+      pageObjIds.push(currentObjId++);
+      contentObjIds.push(currentObjId++);
+    }
+    
+    let pdf = `%PDF-1.4\n`;
+    pdf += `${catalogId} 0 obj\n<< /Type /Catalog /Pages ${pagesTreeId} 0 R >>\nendobj\n`;
+    pdf += `${pagesTreeId} 0 obj\n<< /Type /Pages /Kids [${pageObjIds.map(id => `${id} 0 R`).join(' ')}] /Count ${numPages} >>\nendobj\n`;
+    pdf += `${fontId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`;
+    
+    for (let i = 0; i < numPages; i++) {
+      const pageId = pageObjIds[i];
+      const contentId = contentObjIds[i];
+      const streamContent = pages[i];
+      const streamLength = streamContent.length;
+      
+      pdf += `${pageId} 0 obj\n<< /Type /Page /Parent ${pagesTreeId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> /MediaBox [0 0 612 792] /Contents ${contentId} 0 R >>\nendobj\n`;
+      pdf += `${contentId} 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamContent}\nstream_end\nendstream\nendobj\n`;
+    }
+    
+    pdf += `xref\n0 ${currentObjId}\n0000000000 65535 f \n`;
+    pdf += `trailer\n<< /Size ${currentObjId} /Root ${catalogId} 0 R >>\n`;
+    pdf += `startxref\n10\n%%EOF`;
+    
+    // Fix capacitor pdf parse matching
+    return pdf.replace(/\nstream_end\n/g, '\n');
+  };
+
+  const handleExportCopilotPdf = () => {
+    if (!activeViewNote || !copilotOutput) return;
+    playSynthSound('click');
+    triggerAlert('Exporting Copilot output to PDF...', 'info');
+    
+    let pdfTitle = '';
+    let pdfSubtitle = '';
+    let reportTitle = '';
+    
+    if (selectedCopilotToolId === 'freestyle_custom') {
+      pdfTitle = (customPdfTitle.trim() || 'ACRO Custom Freestyle Output').toUpperCase();
+      pdfSubtitle = customPdfSubtitle.trim() || 'Freestyle Academic Document';
+      reportTitle = `${activeViewNote.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_Custom_Report.pdf`;
+    } else {
+      const tool = AI_COPILOT_GROUPS.flatMap(g => g.tools).find(t => t.id === selectedCopilotToolId);
+      pdfTitle = (tool?.name || 'ACRO CO-PILOT ACADEMIC OUTPUT').toUpperCase();
+      pdfSubtitle = `Original Note: ${activeViewNote.title}`;
+      reportTitle = `${activeViewNote.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_${(tool?.name || 'Copilot').replace(/[^a-zA-Z0-9_\- ]/g, '')}.pdf`;
+    }
+    
+    const pdfContent = generateRobustPdf(pdfTitle, pdfSubtitle, copilotOutput);
+    const base64Data = btoa(unescape(encodeURIComponent(pdfContent)));
+    const dataUrl = `data:application/pdf;base64,${base64Data}`;
+    
+    const generatedReportObj = {
+      name: reportTitle,
+      dataUrl,
+      generatedAt: new Date().toLocaleString()
+    };
+    
+    const updatedNote = {
+      ...activeViewNote,
+      generatedPdfReport: generatedReportObj,
+      outputType: 'pdf' as const,
+      outputArtifact: {
+        title: pdfTitle,
+        body: copilotOutput,
+        dataUrl
+      }
+    };
+    
+    setNotes(prev => prev.map(n => n.id === activeViewNote.id ? updatedNote : n));
+    setActiveViewNote(updatedNote);
+    
+    try {
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = dataUrl;
+      a.download = reportTitle;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); }, 1000);
+      triggerAlert('PDF Downloaded!', 'success');
+    } catch (e) {
+      console.warn('PDF download error:', e);
     }
   };
 
@@ -2100,6 +2461,7 @@ Answer the student's question directly using the profile and context above.
                       {note.isPinned && <PushPin size={12} weight="fill" style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                       <span className="note-row-title">{note.title}</span>
                     </div>
+                    {note.subtitle && <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: '2px 0 6px 0', fontWeight: 600 }}>{note.subtitle}</p>}
                     <p className="note-row-excerpt">{note.content}</p>
                     <div className="note-row-meta">
                       <span className="note-date">{note.date}</span>
@@ -3016,14 +3378,128 @@ Answer the student's question directly using the profile and context above.
               </button>
             </div>
             <div className="modal-body">
+              {/* Dependent dropdowns for Title and Subtitle */}
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-1)' }}>
-                  <label className="form-label" htmlFor="note-title" style={{ margin: 0 }}>Title (Optional)</label>
-                  <span className="badge badge-green" style={{ fontSize: '0.7rem' }}>Saved</span>
-                </div>
-                <input id="note-title" type="text" className="form-input" placeholder="Auto-generated if left blank..." value={newNoteTitle}
-                  onChange={e => setNewNoteTitle(e.target.value)} autoFocus />
+                <label className="form-label" htmlFor="note-category-select">Title</label>
+                <select
+                  id="note-category-select"
+                  className="form-input"
+                  style={{
+                    width: '100%',
+                    padding: '12px 36px 12px var(--sp-3)',
+                    fontSize: '0.875rem',
+                    fontWeight: 700,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 'var(--r-md)',
+                    color: '#1e293b',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    appearance: 'none',
+                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 12px center',
+                    backgroundSize: '16px'
+                  }}
+                  value={selectedCopilotGroupId}
+                  onChange={e => {
+                    playSynthSound('click');
+                    const gId = e.target.value;
+                    setSelectedCopilotGroupId(gId);
+                    
+                    if (gId === 'custom') {
+                      setSelectedCopilotToolId('freestyle_custom');
+                    } else {
+                      const grp = AI_COPILOT_GROUPS.find(g => g.id === gId);
+                      if (grp && grp.tools.length > 0) {
+                        setSelectedCopilotToolId(grp.tools[0].id);
+                      }
+                    }
+                  }}
+                >
+                  <option value="convert" style={{ background: '#ffffff', color: '#1e293b' }}>Convert Format</option>
+                  <option value="study" style={{ background: '#ffffff', color: '#1e293b' }}>Study and Questions</option>
+                  <option value="edit" style={{ background: '#ffffff', color: '#1e293b' }}>Edit and Polish</option>
+                  <option value="smart" style={{ background: '#ffffff', color: '#1e293b' }}>Analytics and Tools</option>
+                  <option value="custom" style={{ background: '#ffffff', color: '#2563eb', fontWeight: 800 }}>Custom</option>
+                </select>
               </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="note-tool-select">Subtitle</label>
+                <select
+                  id="note-tool-select"
+                  className="form-input"
+                  style={{
+                    width: '100%',
+                    padding: '12px 36px 12px var(--sp-3)',
+                    fontSize: '0.875rem',
+                    fontWeight: 700,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 'var(--r-md)',
+                    color: '#1e293b',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    appearance: 'none',
+                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 12px center',
+                    backgroundSize: '16px'
+                  }}
+                  value={selectedCopilotToolId}
+                  onChange={e => {
+                    playSynthSound('click');
+                    setSelectedCopilotToolId(e.target.value);
+                  }}
+                >
+                  {selectedCopilotGroupId === 'custom' ? (
+                    <option value="freestyle_custom" style={{ background: '#ffffff', color: '#1e293b' }}>Freestyle Custom Action</option>
+                  ) : (
+                    AI_COPILOT_GROUPS.find(g => g.id === selectedCopilotGroupId)?.tools.map(tool => (
+                      <option key={tool.id} value={tool.id} style={{ background: '#ffffff', color: '#1e293b' }}>
+                        {tool.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {/* Conditional Freestyle Config Fields */}
+              {selectedCopilotGroupId === 'custom' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', marginBottom: 'var(--sp-3)', animation: 'slideUp 0.15s ease both' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-2)' }}>
+                    <div>
+                      <label className="form-label" htmlFor="custom-note-title">Custom Title</label>
+                      <input
+                        id="custom-note-title"
+                        type="text"
+                        placeholder="e.g. Academic Summary"
+                        className="form-input"
+                        value={newNoteTitle}
+                        onChange={e => setNewNoteTitle(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" htmlFor="custom-note-subtitle">Custom Subtitle</label>
+                      <input
+                        id="custom-note-subtitle"
+                        type="text"
+                        placeholder="e.g. Unit 3 Review"
+                        className="form-input"
+                        value={newNoteSubtitle}
+                        onChange={e => setNewNoteSubtitle(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label" htmlFor="note-content">Content</label>
                 <textarea id="note-content" rows={5} className="form-textarea" placeholder="Write naturally... e.g. DBMS assignment finish by Friday, study normalization before Monday exam." value={newNoteContent}
@@ -3074,7 +3550,7 @@ Answer the student's question directly using the profile and context above.
                 <div className="modal-icon-wrap"><Note size={18} weight="fill" /></div>
                 <div>
                   <h3 className="modal-title">{activeViewNote.title}</h3>
-                  <p className="modal-subtitle">Created {activeViewNote.date}</p>
+                  <p className="modal-subtitle">{activeViewNote.subtitle || `Created ${activeViewNote.date}`}</p>
                 </div>
               </div>
               <button className="modal-close" onClick={() => setActiveViewNote(null)} aria-label="Close">
@@ -3084,6 +3560,269 @@ Answer the student's question directly using the profile and context above.
             <div className="modal-body">
               {/* Note content */}
               <div className="note-content-box">{activeViewNote.content}</div>
+
+              {/* 🧠 ACRO AI COPILOT PANEL */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(99, 102, 241, 0.04) 100%)',
+                border: '1px solid var(--accent-light)',
+                borderRadius: 'var(--r-lg)',
+                padding: 'var(--sp-4)',
+                marginBottom: 'var(--sp-3)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--sp-3)',
+                boxShadow: 'var(--shadow-sm)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+                  <Robot size={20} weight="fill" style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.9375rem', fontWeight: 800, color: 'var(--text-1)' }}>ACRO AI Academic Copilot</span>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: 'var(--accent)', background: 'var(--accent-light)', padding: '2px 6px', borderRadius: 4, marginLeft: 'auto' }}>Offline Model Ready</span>
+                </div>
+
+                {/* Dual dependent dropdowns for Title and Subtitle */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                      Title
+                    </label>
+                    <select
+                      style={{
+                        width: '100%',
+                        padding: '12px 36px 12px var(--sp-3)',
+                        fontSize: '0.875rem',
+                        fontWeight: 700,
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 'var(--r-md)',
+                        color: '#1e293b',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        WebkitAppearance: 'none',
+                        MozAppearance: 'none',
+                        appearance: 'none',
+                        backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 12px center',
+                        backgroundSize: '16px'
+                      }}
+                      value={selectedCopilotGroupId}
+                      onChange={e => {
+                        playSynthSound('click');
+                        const gId = e.target.value;
+                        setSelectedCopilotGroupId(gId);
+                        
+                        if (gId === 'custom') {
+                          setSelectedCopilotToolId('freestyle_custom');
+                        } else {
+                          const grp = AI_COPILOT_GROUPS.find(g => g.id === gId);
+                          if (grp && grp.tools.length > 0) {
+                            setSelectedCopilotToolId(grp.tools[0].id);
+                          }
+                        }
+                      }}
+                    >
+                      <option value="convert" style={{ background: '#ffffff', color: '#1e293b' }}>Convert Format</option>
+                      <option value="study" style={{ background: '#ffffff', color: '#1e293b' }}>Study and Questions</option>
+                      <option value="edit" style={{ background: '#ffffff', color: '#1e293b' }}>Edit and Polish</option>
+                      <option value="smart" style={{ background: '#ffffff', color: '#1e293b' }}>Analytics and Tools</option>
+                      <option value="custom" style={{ background: '#ffffff', color: '#2563eb', fontWeight: 800 }}>Custom</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                      Subtitle
+                    </label>
+                    <select
+                      style={{
+                        width: '100%',
+                        padding: '12px 36px 12px var(--sp-3)',
+                        fontSize: '0.875rem',
+                        fontWeight: 700,
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 'var(--r-md)',
+                        color: '#1e293b',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        WebkitAppearance: 'none',
+                        MozAppearance: 'none',
+                        appearance: 'none',
+                        backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 12px center',
+                        backgroundSize: '16px'
+                      }}
+                      value={selectedCopilotToolId}
+                      onChange={e => {
+                        playSynthSound('click');
+                        setSelectedCopilotToolId(e.target.value);
+                      }}
+                    >
+                      {selectedCopilotGroupId === 'custom' ? (
+                        <option value="freestyle_custom" style={{ background: '#ffffff', color: '#1e293b' }}>Freestyle Custom Action</option>
+                      ) : (
+                        AI_COPILOT_GROUPS.find(g => g.id === selectedCopilotGroupId)?.tools.map(tool => (
+                          <option key={tool.id} value={tool.id} style={{ background: '#ffffff', color: '#1e293b' }}>
+                            {tool.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Conditional Freestyle Config Fields */}
+                {selectedCopilotToolId === 'freestyle_custom' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', animation: 'slideUp 0.15s ease both' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-2)' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                          Custom Doc Title
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Academic Summary"
+                          style={{
+                            width: '100%',
+                            padding: 'var(--sp-2) var(--sp-3)',
+                            fontSize: '0.8125rem',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--r-md)',
+                            color: 'var(--text-1)'
+                          }}
+                          value={customPdfTitle}
+                          onChange={e => setCustomPdfTitle(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                          Custom Doc Subtitle
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Unit 3 Review"
+                          style={{
+                            width: '100%',
+                            padding: 'var(--sp-2) var(--sp-3)',
+                            fontSize: '0.8125rem',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--r-md)',
+                            color: 'var(--text-1)'
+                          }}
+                          value={customPdfSubtitle}
+                          onChange={e => setCustomPdfSubtitle(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                        Freestyle Action Instruction (Required)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Summarize this note in 3 simple paragraphs and list benefits"
+                        style={{
+                          width: '100%',
+                          padding: 'var(--sp-2) var(--sp-3)',
+                          fontSize: '0.8125rem',
+                          background: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--r-md)',
+                          color: 'var(--text-1)'
+                        }}
+                        value={copilotCustomFocus}
+                        onChange={e => setCopilotCustomFocus(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--sp-2)' }}>
+                      Custom Focus / Target Topic (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Focus on ML optimization, simplify terms, rewrite, etc..."
+                      style={{
+                        width: '100%',
+                        padding: 'var(--sp-2) var(--sp-3)',
+                        fontSize: '0.8125rem',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-md)',
+                        color: 'var(--text-1)'
+                      }}
+                      value={copilotCustomFocus}
+                      onChange={e => setCopilotCustomFocus(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Action Trigger Button */}
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: 'var(--sp-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-2)' }}
+                  onClick={() => handleExecuteCopilotAction(selectedCopilotToolId)}
+                  disabled={isExecutingCopilot || !isChatModelInstalled}
+                >
+                  {isExecutingCopilot ? (
+                    <><ArrowsClockwise size={16} weight="bold" className="animate-spin" /> Executing copilot task...</>
+                  ) : (
+                    <><Play size={16} weight="fill" /> Execute AI Copilot Action</>
+                  )}
+                </button>
+
+                {/* Copilot Execution Output Result Container */}
+                {copilotOutput && (
+                  <div style={{
+                    marginTop: 'var(--sp-2)',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-md)',
+                    padding: 'var(--sp-4)',
+                    animation: 'slideUp 0.2s ease both'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-2)', marginBottom: 'var(--sp-3)' }}>
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--success)' }}>AI Output Generated</span>
+                      <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
+                        <button
+                          className="btn btn-secondary btn-xs"
+                          style={{ padding: '4px 8px', fontSize: '0.6875rem' }}
+                          onClick={() => {
+                            navigator.clipboard.writeText(copilotOutput);
+                            triggerAlert('Copied to clipboard!', 'success');
+                          }}
+                        >
+                          Copy
+                        </button>
+                        <button className="btn btn-secondary btn-xs" style={{ padding: '4px 8px', fontSize: '0.6875rem' }} onClick={() => handleApplyCopilotOutput('append')}>Append</button>
+                        <button className="btn btn-secondary btn-xs" style={{ padding: '4px 8px', fontSize: '0.6875rem' }} onClick={() => handleApplyCopilotOutput('replace')}>Replace</button>
+                        <button className="btn btn-primary btn-xs" style={{ padding: '4px 8px', fontSize: '0.6875rem' }} onClick={handleExportCopilotPdf}>Export PDF</button>
+                      </div>
+                    </div>
+                    
+                    <div style={{
+                      fontSize: '0.8125rem',
+                      color: 'var(--text-2)',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      background: 'var(--surface-2)',
+                      padding: 'var(--sp-3)',
+                      borderRadius: 'var(--r-sm)',
+                      borderLeft: '3px solid var(--success)',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {renderMarkdown(copilotOutput)}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* PDF attachment */}
               {activeViewNote.pdfAttachment && (
