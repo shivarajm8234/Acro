@@ -17,6 +17,7 @@ import {
   CaretDown, CaretUp, Trophy, TrendUp,
 } from '@phosphor-icons/react';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min?url';
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { ragService } from './services/ragService';
@@ -33,7 +34,7 @@ interface AppLockPluginType {
 
 const AppLock = registerPlugin<AppLockPluginType>('AppLock');
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 interface ModelDownloaderPluginType {
   startDownload(options: { modelId: string; url: string; hfToken?: string; fileName: string; sizeBytes: number }): Promise<void>;
@@ -1629,16 +1630,25 @@ Provide only the processed, synthesized output with zero extra conversational fi
     playSynthSound('click');
 
     try {
-      const enableSearch = window.confirm('Would you like to search the web for real-time role requirements?');
+      const isOnline = navigator.onLine;
+      let enableSearch = false;
+      let searchResults = 'Use local AI knowledge for requirements of this role.';
+
+      if (isOnline) {
+        enableSearch = window.confirm('Would you like to search the web for real-time role requirements?');
+      } else {
+        triggerAlert('Offline mode: Using local AI knowledge base for job requirements.', 'info');
+      }
+
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
-      let searchResults = 'Use local AI knowledge for requirements of this role.';
-      if (enableSearch) {
+
+      if (enableSearch && isOnline) {
         triggerAlert(`Searching web for ${cleanRole} role requirements...`, 'info');
         searchResults = await fetchWebSearch(cleanCompany, cleanRole);
         setCompanyInfoSearch(searchResults);
       } else {
-        setCompanyInfoSearch('Web search disabled. Using local model knowledge.');
+        setCompanyInfoSearch(isOnline ? 'Web search disabled. Using local model knowledge.' : 'Device offline. Using local model knowledge.');
       }
 
       triggerAlert('Performing local RAG vector similarity search...', 'info');
