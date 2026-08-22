@@ -132,26 +132,6 @@ export const AI_COPILOT_GROUPS: CopilotGroup[] = [
       { id: "edit_continue", name: "Continue Writing", prompt: "Predict the logical next paragraph of the note and continue writing it in the same style." },
       { id: "edit_titles", name: "Generate Creative Titles", prompt: "Suggest 5 alternative, catchy, and professional academic titles for the note." }
     ]
-  },
-  {
-    id: "smart",
-    name: "Analytics & Smart Tools",
-    icon: "Lightning",
-    tools: [
-      { id: "smart_summarize", name: "Offline Note Summarization", prompt: "Produce a high-quality offline summarization containing only verified details." },
-      { id: "smart_key_points", name: "Key-Point Extraction", prompt: "Extract the exact key statements and findings from the note content, formatted as a checklist." },
-      { id: "smart_task_detect", name: "Actionable Task Detection", prompt: "Analyze the note content to detect actionable items, assignments, or deadlines." },
-      { id: "smart_deadline_detect", name: "Deadline Detection", prompt: "Identify any calendar days, times, or milestones mentioned in the note." },
-      { id: "smart_reminder", name: "Reminder Suggestions", prompt: "Suggest timely reminders and follow-up activities based on the note." },
-      { id: "smart_categorize", name: "Automatic Categorization", prompt: "Suggest the single best academic category for this note out of: Assignment, Exam, Project, Research, Placement, Portfolio, Personal." },
-      { id: "smart_tags", name: "Automatic Tagging", prompt: "Generate 5 relevant tags/keywords for this note." },
-      { id: "smart_keywords", name: "Keyword Extraction", prompt: "Extract the top 10 most relevant technical keywords and entities from the note." },
-      { id: "smart_entities", name: "Entity & Tech Stack Detection", prompt: "Detect and list all software libraries, tools, formulas, and academic entities mentioned." },
-      { id: "smart_related", name: "Related-Note Suggestions", prompt: "Propose other study notes or topics that the user should review alongside this note." },
-      { id: "smart_duplicate", name: "Duplicate-Note Detection", prompt: "Analyze the note content and report whether it contains highly redundant info." },
-      { id: "smart_qa", name: "Question Answering Model", prompt: "Formulate answers to the most common questions a student would ask about this note." },
-      { id: "smart_suggestions", name: "Contextual Note Suggestions", prompt: "Suggest next steps, related reading list, or future study milestones based on the note." }
-    ]
   }
 ];
 
@@ -3485,7 +3465,6 @@ Answer the student's question directly using the profile and context above.
                   <option value="convert" style={{ background: '#ffffff', color: '#1e293b' }}>Convert Format</option>
                   <option value="study" style={{ background: '#ffffff', color: '#1e293b' }}>Study and Questions</option>
                   <option value="edit" style={{ background: '#ffffff', color: '#1e293b' }}>Edit and Polish</option>
-                  <option value="smart" style={{ background: '#ffffff', color: '#1e293b' }}>Analytics and Tools</option>
                   <option value="custom" style={{ background: '#ffffff', color: '#2563eb', fontWeight: 800 }}>Custom</option>
                 </select>
               </div>
@@ -3687,7 +3666,6 @@ Answer the student's question directly using the profile and context above.
                       <option value="convert" style={{ background: '#ffffff', color: '#1e293b' }}>Convert Format</option>
                       <option value="study" style={{ background: '#ffffff', color: '#1e293b' }}>Study and Questions</option>
                       <option value="edit" style={{ background: '#ffffff', color: '#1e293b' }}>Edit and Polish</option>
-                      <option value="smart" style={{ background: '#ffffff', color: '#1e293b' }}>Analytics and Tools</option>
                       <option value="custom" style={{ background: '#ffffff', color: '#2563eb', fontWeight: 800 }}>Custom</option>
                     </select>
                   </div>
