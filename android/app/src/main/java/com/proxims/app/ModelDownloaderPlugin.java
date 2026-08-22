@@ -55,13 +55,19 @@ public class ModelDownloaderPlugin extends Plugin {
         Future<?> future = executor.submit(new Runnable() {
             @Override
             public void run() {
-                File modelsDir = new File(getContext().getFilesDir(), "models");
+                File acroPublicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Acro");
+                if (!acroPublicDir.exists()) {
+                    acroPublicDir.mkdirs();
+                }
+
+                File modelsDir = new File(getContext().getFilesDir(), "Acro");
                 if (!modelsDir.exists()) {
                     modelsDir.mkdirs();
                 }
 
                 File modelFile = new File(modelsDir, fileName);
                 File tempFile = new File(modelsDir, fileName + ".tmp");
+                File publicModelFile = new File(acroPublicDir, fileName);
 
                 try {
                     long existingBytes = 0;
@@ -182,6 +188,12 @@ public class ModelDownloaderPlugin extends Plugin {
                         throw new Exception("Failed to rename temporary file to destination");
                     }
 
+                    try {
+                        java.nio.file.Files.copy(modelFile.toPath(), publicModelFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } catch (Exception copyEx) {
+                        Log.w(TAG, "Failed to copy to public Downloads/Acro: " + copyEx.getMessage());
+                    }
+
                     sendProgress(modelId, "installed", totalBytes, totalBytes);
 
                 } catch (Exception e) {
@@ -224,14 +236,16 @@ public class ModelDownloaderPlugin extends Plugin {
             return;
         }
 
-        File modelsDir = new File(getContext().getFilesDir(), "models");
+        File modelsDir = new File(getContext().getFilesDir(), "Acro");
         File modelFile = new File(modelsDir, fileName);
         File tempFile = new File(modelsDir, fileName + ".tmp");
+        File acroPublicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Acro");
+        File publicModelFile = new File(acroPublicDir, fileName);
 
         JSObject result = new JSObject();
-        if (modelFile.exists() && modelFile.length() > 0) {
+        if ((modelFile.exists() && modelFile.length() > 0) || (publicModelFile.exists() && publicModelFile.length() > 0)) {
             result.put("status", "installed");
-            result.put("size", modelFile.length());
+            result.put("size", modelFile.exists() ? modelFile.length() : publicModelFile.length());
         } else if (tempFile.exists()) {
             result.put("status", "downloading");
             result.put("size", tempFile.length());
@@ -254,9 +268,11 @@ public class ModelDownloaderPlugin extends Plugin {
 
         cancelDownloadInternal(modelId);
 
-        File modelsDir = new File(getContext().getFilesDir(), "models");
+        File modelsDir = new File(getContext().getFilesDir(), "Acro");
         File modelFile = new File(modelsDir, fileName);
         File tempFile = new File(modelsDir, fileName + ".tmp");
+        File acroPublicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Acro");
+        File publicModelFile = new File(acroPublicDir, fileName);
 
         boolean deleted = false;
         if (modelFile.exists()) {
@@ -264,6 +280,9 @@ public class ModelDownloaderPlugin extends Plugin {
         }
         if (tempFile.exists()) {
             deleted = tempFile.delete() || deleted;
+        }
+        if (publicModelFile.exists()) {
+            deleted = publicModelFile.delete() || deleted;
         }
 
         JSObject result = new JSObject();
