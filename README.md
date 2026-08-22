@@ -23,6 +23,33 @@ Acro is an autonomous Android utility designed to help students maximize focus d
 
 ---
 
+## 📁 Project Directory Structure
+
+```text
+Acro/
+├── android/                             # Native Android Studio Project
+│   └── app/
+│       └── src/main/java/com/proxims/app/
+│           ├── MainActivity.java        # Main activity launching the Capacitor Web View
+│           ├── AppLockPlugin.java       # Capacitor Native Plugin for locks, package info, and accessibility status
+│           ├── OAuthPlugin.java         # Capacitor Native Plugin to parse Google OAuth redirects on device
+│           └── AppFocusAccessibilityService.java # Android Accessibility Service enforcing app-locking overlays
+├── src/                                 # Frontend Web Source Code (React + TypeScript)
+│   ├── App.tsx                          # Primary component containing main UI dashboards, timers, and sync handlers
+│   ├── App.css                          # Futuristic dashboard styling & custom visual components
+│   ├── main.tsx                         # React application entry point
+│   └── services/
+│       └── gmailService.ts              # Helper utilities for formatting and syncing mailboxes
+├── public/                              # Public assets
+│   ├── acro-fg.png                      # Crisp foreground emblem for Android launcher
+│   └── acro-logo.png                    # Brand typography assets
+├── capacitor.config.ts                  # Cross-platform runtime configuration file
+├── package.json                         # Node dependencies & project scripts
+└── .env                                 # Environment keys configuration (not committed)
+```
+
+---
+
 ## 🛠️ Environment Configuration
 
 Create a `.env` file in the project root:
