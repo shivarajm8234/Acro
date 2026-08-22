@@ -250,6 +250,18 @@ export default function App() {
     keywordsMissing: string[];
   } | null>(null);
 
+  // Render text replacing **bold** with <strong> elements safely in React
+  const renderFormattedText = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
   // Extract text from base64 PDF resume using pdfjs-dist
   const extractTextFromResume = async (dataUrl: string): Promise<string> => {
     try {
@@ -422,26 +434,51 @@ Return ONLY valid JSON.
       triggerAlert(`Analyzing match locally using ${model.name}...`, 'info');
       const result = await LlmInference.generateResponse({ prompt: analysisPrompt });
       analysisResultText = result.response;
-      // Try to parse JSON from response
+      // Calculate dynamic keyword match score between resumeText, searchResults, and studentProfile
+      const userSkills = studentProfile.skills.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      const matchedSkills = userSkills.filter(skill => 
+        resumeText.toLowerCase().includes(skill) || 
+        searchResults.toLowerCase().includes(skill)
+      );
+      const calculatedMatchScore = userSkills.length > 0 ? Math.round((matchedSkills.length / userSkills.length) * 100) : 60;
+      // Clamp between 45 and 95
+      const fallbackScore = Math.max(45, Math.min(95, calculatedMatchScore));
+
+      // Try to parse JSON from response or extract using regex
       let parsed: { score: number; fitAnalysis: string; suggestions: string[] } = {
-        score: 70,
-        fitAnalysis: 'Analysis completed.',
+        score: fallbackScore,
+        fitAnalysis: analysisResultText || 'Analysis completed.',
         suggestions: []
       };
       try {
         const jsonMatch = analysisResultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
+          const parsedJson = JSON.parse(jsonMatch[0]);
+          if (parsedJson.score) parsed.score = parsedJson.score;
+          if (parsedJson.fitAnalysis) parsed.fitAnalysis = parsedJson.fitAnalysis;
+          if (parsedJson.suggestions) parsed.suggestions = parsedJson.suggestions;
         } else {
-          parsed = JSON.parse(analysisResultText);
+          // Attempt Regex extraction of score
+          const scoreMatch = analysisResultText.match(/(?:score|match|fit)\s*[:\-]?\s*(\d+)%?/i) || analysisResultText.match(/(\d+)%/);
+          if (scoreMatch) {
+            parsed.score = parseInt(scoreMatch[1]);
+          }
         }
       } catch (e) {
         console.warn('AI did not return valid JSON, parsing raw text...', e);
-        parsed = {
-          score: 75,
-          fitAnalysis: analysisResultText,
-          suggestions: ['Review role requirements carefully.', 'Enhance missing technical skills.']
-        };
+      }
+      
+      // If suggestions array is empty, try to parse lines starting with - or * from raw text
+      if (parsed.suggestions.length === 0) {
+        const bulletPoints = analysisResultText.split('\n')
+          .map(line => line.trim())
+          .filter(line => line.startsWith('-') || line.startsWith('*'))
+          .map(line => line.substring(1).trim());
+        if (bulletPoints.length > 0) {
+          parsed.suggestions = bulletPoints;
+        } else {
+          parsed.suggestions = ['Review target company requirements.', 'Highlight matching projects in your resume.'];
+        }
       }
 
       setMatchScore(parsed.score);
@@ -537,6 +574,19 @@ Return ONLY valid JSON.
       triggerAlert(`Running ATS compatibility analysis locally using ${model.name}...`, 'info');
       const result = await LlmInference.generateResponse({ prompt: atsPrompt });
       atsResultText = result.response;
+      // Local dynamic ATS calculator to prevent hardcoding
+      const sectionsList = ['education', 'experience', 'skills', 'projects', 'certifications', 'summary', 'languages'];
+      const foundSections = sectionsList.filter(sec => new RegExp(`\\b${sec}\\b`, 'i').test(resumeText));
+      const sectionScore = (foundSections.length / 5) * 40; // max 40 points
+      
+      const wordsCount = resumeText.split(/\s+/).filter(Boolean).length;
+      const lengthScore = wordsCount >= 150 && wordsCount <= 900 ? 30 : wordsCount > 900 ? 20 : 10; // max 30 points
+
+      const profileSkills = studentProfile.skills.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      const matchedSkills = profileSkills.filter(skill => resumeText.toLowerCase().includes(skill));
+      const skillsScore = profileSkills.length > 0 ? (matchedSkills.length / profileSkills.length) * 30 : 20; // max 30 points
+      const calculatedAtsScore = Math.max(35, Math.min(98, Math.round(sectionScore + lengthScore + skillsScore)));
+
       let parsed: {
         score: number;
         feedback: string;
@@ -544,28 +594,43 @@ Return ONLY valid JSON.
         keywordsFound: string[];
         keywordsMissing: string[];
       } = {
-        score: 65,
-        feedback: 'Analysis completed.',
+        score: calculatedAtsScore,
+        feedback: atsResultText || 'Analysis completed.',
         suggestions: [],
-        keywordsFound: [],
+        keywordsFound: matchedSkills.length > 0 ? matchedSkills : (studentProfile.skills ? studentProfile.skills.split(',') : ['Analytics']),
         keywordsMissing: []
       };
       try {
         const jsonMatch = atsResultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
+          const parsedJson = JSON.parse(jsonMatch[0]);
+          if (parsedJson.score) parsed.score = parsedJson.score;
+          if (parsedJson.feedback) parsed.feedback = parsedJson.feedback;
+          if (parsedJson.suggestions) parsed.suggestions = parsedJson.suggestions;
+          if (parsedJson.keywordsFound) parsed.keywordsFound = parsedJson.keywordsFound;
+          if (parsedJson.keywordsMissing) parsed.keywordsMissing = parsedJson.keywordsMissing;
         } else {
-          parsed = JSON.parse(atsResultText);
+          // Regex match extraction of score from text output
+          const scoreMatch = atsResultText.match(/(?:score|rating|result)\s*[:\-]?\s*(\d+)%?/i) || atsResultText.match(/(\d+)%/);
+          if (scoreMatch) {
+            parsed.score = parseInt(scoreMatch[1]);
+          }
         }
       } catch (e) {
         console.warn('ATS AI did not return valid JSON, using raw parsing...', e);
-        parsed = {
-          score: 70,
-          feedback: atsResultText,
-          suggestions: ['Verify resume sections have standard headers.', 'Make sure contact information is clear.'],
-          keywordsFound: studentProfile.skills.split(','),
-          keywordsMissing: ['Cloud Computing', 'Git']
-        };
+      }
+
+      // Fill in lists if empty
+      if (parsed.suggestions.length === 0) {
+        const bulletPoints = atsResultText.split('\n')
+          .map(line => line.trim())
+          .filter(line => line.startsWith('-') || line.startsWith('*'))
+          .map(line => line.substring(1).trim());
+        parsed.suggestions = bulletPoints.length > 0 ? bulletPoints : ['Ensure standard headers like Education and Skills are present.', 'Add metrics and impact numbers to experience details.'];
+      }
+      if (parsed.keywordsMissing.length === 0) {
+        const standardTechKeywords = ['Docker', 'CI/CD', 'Git', 'Cloud Computing', 'SQL', 'TypeScript', 'System Design'];
+        parsed.keywordsMissing = standardTechKeywords.filter(kw => !resumeText.toLowerCase().includes(kw.toLowerCase())).slice(0, 3);
       }
 
       setAtsResult(parsed);
@@ -1921,15 +1986,15 @@ Return ONLY valid JSON.
                       {companyInfoSearch.split('\n').map((line, idx) => {
                         const trimmedLine = line.trim();
                         if (trimmedLine.startsWith('###')) {
-                          return <h5 key={idx} style={{ marginTop: '0.5rem', color: '#1e1b4b', fontWeight: 'bold' }}>{trimmedLine.replace('###', '').trim()}</h5>;
+                          return <h5 key={idx} style={{ marginTop: '0.5rem', color: '#1e1b4b', fontWeight: 'bold' }}>{renderFormattedText(trimmedLine.replace('###', '').trim())}</h5>;
                         }
                         if (trimmedLine.startsWith('##')) {
-                          return <h4 key={idx} style={{ marginTop: '0.75rem', color: '#1e1b4b', fontWeight: 'bold' }}>{trimmedLine.replace('##', '').trim()}</h4>;
+                          return <h4 key={idx} style={{ marginTop: '0.75rem', color: '#1e1b4b', fontWeight: 'bold' }}>{renderFormattedText(trimmedLine.replace('##', '').trim())}</h4>;
                         }
                         if (trimmedLine.startsWith('*') || trimmedLine.startsWith('-')) {
-                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.8rem', listStyleType: 'disc', margin: '0.25rem 0' }}>{trimmedLine.substring(1).trim()}</li>;
+                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.8rem', listStyleType: 'disc', margin: '0.25rem 0' }}>{renderFormattedText(trimmedLine.substring(1).trim())}</li>;
                         }
-                        return <p key={idx} style={{ fontSize: '0.8rem', lineHeight: '1.4', margin: '0.25rem 0' }}>{trimmedLine}</p>;
+                        return <p key={idx} style={{ fontSize: '0.8rem', lineHeight: '1.4', margin: '0.25rem 0' }}>{renderFormattedText(trimmedLine)}</p>;
                       })}
                     </div>
                   </div>
@@ -1947,12 +2012,12 @@ Return ONLY valid JSON.
                     <div className="analysis-result-markdown">
                       {companyMatchResult.split('\n').map((line, idx) => {
                         if (line.startsWith('###')) {
-                          return <h4 key={idx} style={{ marginTop: '1rem', color: '#1e1b4b' }}>{line.replace('###', '')}</h4>;
+                          return <h4 key={idx} style={{ marginTop: '1rem', color: '#1e1b4b' }}>{renderFormattedText(line.replace('###', ''))}</h4>;
                         }
                         if (line.startsWith('-')) {
-                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.85rem' }}>{line.replace('-', '')}</li>;
+                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.85rem' }}>{renderFormattedText(line.replace('-', ''))}</li>;
                         }
-                        return <p key={idx} style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: '0.5rem 0' }}>{line}</p>;
+                        return <p key={idx} style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: '0.5rem 0' }}>{renderFormattedText(line)}</p>;
                       })}
                     </div>
                   </div>
@@ -2001,8 +2066,7 @@ Return ONLY valid JSON.
                           <span className="badge-grade medium">Good - Needs Improvements</span>
                         ) : (
                           <span className="badge-grade low">Poor ATS Parsing Match</span>
-                        )}
-                        <p className="ats-feedback-desc">{atsResult.feedback}</p>
+                        )}                        <p className="ats-feedback-desc">{renderFormattedText(atsResult.feedback)}</p>
                       </div>
                     </div>
 
@@ -2010,11 +2074,10 @@ Return ONLY valid JSON.
                       <h4>Smart Suggestions:</h4>
                       <ul>
                         {atsResult.suggestions.map((sug, idx) => (
-                          <li key={idx}>{sug}</li>
+                          <li key={idx}>{renderFormattedText(sug)}</li>
                         ))}
                       </ul>
                     </div>
-
                     <div className="ats-keywords-grid">
                       <div className="keyword-col">
                         <h4 className="kw-title found">Keywords Found</h4>
