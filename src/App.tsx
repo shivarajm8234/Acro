@@ -1,49 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Cpu, 
-  Download, 
-  RefreshCw, 
-  Trash2, 
-  Play, 
-  Pause, 
-  Eye, 
-  EyeOff, 
-  Check, 
-  CheckCircle,
-  Tv,
-  MessageSquare,
-  Send,
-  X,
-  ChevronDown,
-  ChevronUp,
-  Mic,
-  Bot,
-  User,
-  FileText,
-  Bell,
-  Upload,
-  Paperclip,
-  Save,
-  ArrowLeft,
-  ExternalLink,
-  Briefcase,
-  Search,
-  Award,
-  TrendingUp,
-  AlertTriangle,
-  Lock,
-  Plus,
-  StickyNote,
-  Pin,
-  Star,
-  Archive
-} from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  // Navigation & UI
+  House, Brain, TelevisionSimple, Briefcase, User,
+  // Actions
+  Plus, X, Check, Download, Trash, Play, Pause,
+  Upload, FloppyDisk, ArrowSquareOut, MagnifyingGlass,
+  // Comms
+  ChatCircle, PaperPlaneTilt, Microphone,
+  // Status & Info
+  Warning, CheckCircle, Lock,
+  // Content
+  Note, PushPin, Star, Archive, FileText, Paperclip,
+  // AI
+  Robot, Cpu, ArrowsClockwise, Eye, EyeSlash,
+  // Misc
+  CaretDown, CaretUp, Trophy, TrendUp,
+} from '@phosphor-icons/react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Xframe } from 'capacitor-plugin-xframe';
 import { registerPlugin } from '@capacitor/core';
 import { ragService } from './services/ragService';
 import './App.css';
 
+// ─── Plugin Registrations ───────────────────────────────────────────
 interface AppLockPluginType {
   isAccessibilityEnabled(): Promise<{ enabled: boolean }>;
   openAccessibilitySettings(): Promise<void>;
@@ -53,7 +32,6 @@ interface AppLockPluginType {
 
 const AppLock = registerPlugin<AppLockPluginType>('AppLock');
 
-// Configure pdfjs worker for native canvas PDF rendering
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface ModelDownloaderPluginType {
@@ -66,7 +44,7 @@ interface ModelDownloaderPluginType {
 
 const ModelDownloader = registerPlugin<ModelDownloaderPluginType>('ModelDownloader');
 
-// Model definition interface
+// ─── Types & Constants ──────────────────────────────────────────────
 interface AIModel {
   id: string;
   name: string;
@@ -158,7 +136,6 @@ interface ChatMessage {
   };
 }
 
-// Native On-Device LLM Inference Plugin (MediaPipe)
 const LlmInference = registerPlugin('LlmInference') as {
   loadModel(options: { modelId: string; fileName: string; useGpu: boolean }): Promise<{ loaded: boolean; modelId: string; message: string }>;
   generateResponse(options: { prompt: string }): Promise<{ response: string; tokenCount: number; timeMs: number; modelId: string }>;
@@ -166,8 +143,126 @@ const LlmInference = registerPlugin('LlmInference') as {
   getStatus(): Promise<{ isLoaded: boolean; loadedModelId: string; isLoading: boolean }>;
 };
 
+const Long_MAX_VALUE = 9223372036854775807;
+
+// ─── Markdown Renderer ──────────────────────────────────────────────
+function renderMarkdown(text: string): React.ReactNode {
+  if (!text) return null;
+
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  const parseInline = (str: string): React.ReactNode => {
+    // Handle bold+italic, bold, italic, inline code
+    const parts = str.split(/(\*\*\*.*?\*\*\*|\*\*.*?\*\*|\*.*?\*|`[^`]+`)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('***') && part.endsWith('***')) {
+        return <strong key={idx}><em>{part.slice(3, -3)}</em></strong>;
+      }
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={idx}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+        return <em key={idx}>{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return <code key={idx}>{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Fenced code block
+    if (trimmed.startsWith('```')) {
+      const lang = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      elements.push(
+        <pre key={`pre-${i}`}><code className={lang ? `language-${lang}` : ''}>{codeLines.join('\n')}</code></pre>
+      );
+      i++;
+      continue;
+    }
+
+    // Headings
+    if (trimmed.startsWith('### ')) {
+      elements.push(<h3 key={`h3-${i}`}>{parseInline(trimmed.slice(4))}</h3>);
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      elements.push(<h2 key={`h2-${i}`}>{parseInline(trimmed.slice(3))}</h2>);
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      elements.push(<h1 key={`h1-${i}`}>{parseInline(trimmed.slice(2))}</h1>);
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (trimmed.startsWith('> ')) {
+      elements.push(<blockquote key={`bq-${i}`}>{parseInline(trimmed.slice(2))}</blockquote>);
+      i++;
+      continue;
+    }
+
+    // HR
+    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+      elements.push(<hr key={`hr-${i}`} />);
+      i++;
+      continue;
+    }
+
+    // Unordered list
+    if (/^[-*+]\s/.test(trimmed)) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && /^[-*+]\s/.test(lines[i].trim())) {
+        listItems.push(<li key={i}>{parseInline(lines[i].trim().slice(2))}</li>);
+        i++;
+      }
+      elements.push(<ul key={`ul-${i}`}>{listItems}</ul>);
+      continue;
+    }
+
+    // Ordered list
+    if (/^\d+\.\s/.test(trimmed)) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+        listItems.push(<li key={i}>{parseInline(lines[i].trim().replace(/^\d+\.\s/, ''))}</li>);
+        i++;
+      }
+      elements.push(<ol key={`ol-${i}`}>{listItems}</ol>);
+      continue;
+    }
+
+    // Empty line — paragraph break
+    if (trimmed === '') {
+      i++;
+      continue;
+    }
+
+    // Plain paragraph
+    elements.push(<p key={`p-${i}`}>{parseInline(trimmed)}</p>);
+    i++;
+  }
+
+  return <div className="md-content">{elements}</div>;
+}
+
+// ─── PDF Viewer ─────────────────────────────────────────────────────
 function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(true);
@@ -182,18 +277,13 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
         const binaryString = window.atob(base64Data);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
+        for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
         const loadingTask = pdfjsLib.getDocument({ data: bytes });
         const pdf = await loadingTask.promise;
         if (isCancelled) return;
         setNumPages(pdf.numPages);
-        
         const page = await pdf.getPage(currentPage);
         if (isCancelled) return;
-
         const viewport = page.getViewport({ scale: 1.1 });
         const canvas = canvasRef.current;
         if (canvas) {
@@ -201,72 +291,66 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
           canvas.height = viewport.height;
           canvas.width = viewport.width;
           if (context) {
-            await page.render({
-              canvasContext: context,
-              viewport: viewport
-            }).promise;
+            await page.render({ canvasContext: context, viewport }).promise;
           }
         }
         setIsLoadingPdf(false);
       } catch (err: any) {
         if (isCancelled) return;
-        console.warn('PDF canvas render fallback:', err);
+        console.warn('PDF canvas render:', err);
         setIsLoadingPdf(false);
       }
     }
-    if (dataUrl) {
-      renderPdfPage();
-    }
-    return () => {
-      isCancelled = true;
-    };
+    if (dataUrl) renderPdfPage();
+    return () => { isCancelled = true; };
   }, [dataUrl, currentPage]);
 
   return (
-    <div className="pdf-canvas-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', overflowX: 'auto', background: '#f8fafc', padding: '0.5rem', borderRadius: '8px' }}>
-      {isLoadingPdf && <div style={{ fontSize: '0.8rem', color: '#64748b', padding: '1rem' }}>Loading PDF Document...</div>}
-      <canvas ref={canvasRef} style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', borderRadius: '4px', background: '#ffffff' }} />
+    <div className="pdf-canvas-wrapper">
+      {isLoadingPdf && (
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', padding: '1rem', textAlign: 'center' }}>
+          Loading document...
+        </div>
+      )}
+      <canvas ref={canvasRef} style={{ maxWidth: '100%', height: 'auto' }} />
       {numPages > 1 && (
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem', color: '#334155' }}>
-          <button 
-            disabled={currentPage <= 1} 
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem' }}>
+          <button
+            disabled={currentPage <= 1}
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            className="btn btn-secondary"
-            style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
-          >
-            Prev
-          </button>
-          <span>Page {currentPage} of {numPages}</span>
-          <button 
-            disabled={currentPage >= numPages} 
+            className="btn btn-secondary btn-sm"
+          >Prev</button>
+          <span style={{ color: 'var(--text-2)' }}>Page {currentPage} of {numPages}</span>
+          <button
+            disabled={currentPage >= numPages}
             onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
-            className="btn btn-secondary"
-            style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
-          >
-            Next
-          </button>
+            className="btn btn-secondary btn-sm"
+          >Next</button>
         </div>
       )}
     </div>
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Main App
+// ═══════════════════════════════════════════════════════════════════
 export default function App() {
-  // Storage State
-  const [availableStorage, setAvailableStorage] = useState<number>(15247134720); // ~14.2 GB
+  // Storage
+  const [availableStorage, setAvailableStorage] = useState<number>(15247134720);
   const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
 
-  // Tab navigation states
+  // Tab
   const [activeTab, setActiveTab] = useState<'home' | 'downloader' | 'animly' | 'profile' | 'placement'>('home');
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
 
-  // Notepad State
+  // Notepad
   const [isAddNoteOpen, setIsAddNoteOpen] = useState<boolean>(false);
   const [newNoteTitle, setNewNoteTitle] = useState<string>('');
   const [newNoteContent, setNewNoteContent] = useState<string>('');
   const [activeViewNote, setActiveViewNote] = useState<NoteItem | null>(null);
 
-  // App Lock (Shakle logic) States
+  // App Lock
   const [isLockModalOpen, setIsLockModalOpen] = useState<boolean>(false);
   const [isLoadingApps, setIsLoadingApps] = useState<boolean>(false);
   const [lockingPackage, setLockingPackage] = useState<string | null>(null);
@@ -277,12 +361,8 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<{ [pkg: string]: 'MINUTES' | 'HOURS' | 'DAYS' | 'INFINITE' }>({});
   const [currentTimeTick, setCurrentTimeTick] = useState<number>(Date.now());
 
-
-
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTimeTick(Date.now());
-    }, 1000);
+    const interval = setInterval(() => setCurrentTimeTick(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -317,18 +397,13 @@ export default function App() {
         return;
       }
     }
-
     setLockingPackage(packageName);
     try {
       const res = await AppLock.setAppLock({ packageName, duration, unit });
-      // Optimistically update local list for zero UI lag
-      setInstalledApps(prev => prev.map(app => {
-        if (app.packageName === packageName) {
-          return { ...app, isBlocked: true, endTimeMs: res.endTimeMs };
-        }
-        return app;
-      }));
-      triggerAlert(`App locked successfully!`, 'success');
+      setInstalledApps(prev => prev.map(app =>
+        app.packageName === packageName ? { ...app, isBlocked: true, endTimeMs: res.endTimeMs } : app
+      ));
+      triggerAlert('App locked successfully.', 'success');
       playSynthSound('success');
     } catch (err: any) {
       triggerAlert(`Lock failed: ${err.message}`, 'error');
@@ -337,7 +412,7 @@ export default function App() {
     }
   };
 
-  // AI Task Intelligence Interface & Note State
+  // ─── Types (inside component for interface access) ─────────────
   interface ExtractedTask {
     id: string;
     title: string;
@@ -371,9 +446,7 @@ export default function App() {
 
   const [notes, setNotes] = useState<NoteItem[]>(() => {
     const saved = localStorage.getItem('acro_user_notes_v2');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { }
-    }
+    if (saved) { try { return JSON.parse(saved); } catch (e) {} }
     return [
       {
         id: '1',
@@ -382,7 +455,7 @@ export default function App() {
         date: new Date().toLocaleDateString(),
         isPinned: true,
         isStarred: true,
-        color: '#fef08a',
+        color: '#3b82f6',
         folder: 'Academics',
         tags: ['DBMS', 'ML', 'Exam'],
         isAiAnalyzed: false
@@ -392,7 +465,6 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('acro_user_notes_v2', JSON.stringify(notes));
-    // Auto-ingest notes into vector DB
     notes.forEach(note => {
       ragService.ingestNote(note.id, note.title, note.content);
     });
@@ -418,8 +490,6 @@ export default function App() {
     setNewNoteTitle('');
     setNewNoteContent('');
     setIsAddNoteOpen(false);
-
-    // Automatically trigger background AI Task Intelligence extraction
     handleAnalyzeNoteTaskIntelligence(newNote);
   };
 
@@ -452,21 +522,17 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 15 * 1024 * 1024) {
-      triggerAlert('File size exceeds maximum limit of 15MB.', 'error');
+      triggerAlert('File size exceeds maximum limit of 15 MB.', 'error');
       return;
     }
-
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result as string;
       const attachment = { name: file.name, dataUrl };
-
-      triggerAlert(`PDF "${file.name}" attached successfully!`, 'success');
+      triggerAlert(`PDF "${file.name}" attached successfully.`, 'success');
       playSynthSound('success');
-
-      // AI PDF Text Extraction Pipeline
       try {
-        triggerAlert('AI extracting text & assignment requirements from PDF in background...', 'info');
+        triggerAlert('Extracting text from PDF in background...', 'info');
         const pdfText = await extractTextFromResume(dataUrl);
         if (pdfText) {
           const extractedTitle = `PDF Notes: ${file.name.replace(/\.pdf$/i, '')}`;
@@ -489,19 +555,15 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Background PDF Generation Task
   const handleGenerateAssignmentPdf = (note: NoteItem) => {
     playSynthSound('click');
-    triggerAlert(`Started 2-5 page PDF generation for "${note.title}" in background...`, 'info');
-
-    // Simulate background worker generation and trigger push notification
+    triggerAlert(`Started PDF generation for "${note.title}" in background.`, 'info');
     setTimeout(() => {
-      triggerAlert(`🎉 Push Notification: PDF generated successfully for "${note.title}"! Tap to view/download.`, 'success');
+      triggerAlert(`PDF generated successfully for "${note.title}".`, 'success');
       playSynthSound('success');
     }, 4000);
   };
 
-  // AI Task Intelligence Extraction Engine using Local Model
   const handleAnalyzeNoteTaskIntelligence = async (noteToAnalyze: NoteItem) => {
     if (!noteToAnalyze.content) return;
     setIsAnalyzingNoteId(noteToAnalyze.id);
@@ -512,7 +574,6 @@ export default function App() {
       if (!status.isLoaded || status.loadedModelId !== chatModelId) {
         await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
       }
-
       const prompt = `<|system|>
 You are an Academic Task Extraction Engine. Read the note text below carefully and extract EVERY individual task mentioned. DO NOT use generic placeholders like "Task title" or "Subtask 1".
 <|user|>
@@ -560,10 +621,9 @@ Priority choices: Critical, High, Medium, Low.
             }));
         }
       } catch (e) {
-        console.warn('Fallback keyword extraction for Task Intelligence...', e);
+        console.warn('Fallback keyword extraction...', e);
       }
 
-      // Dynamic sentence-level multi-task extraction fallback
       if (extractedList.length === 0) {
         const phrases = noteToAnalyze.content.split(/,|;|\band\b|\n/i).map(p => p.trim()).filter(p => p.length > 3);
         phrases.forEach((phrase, idx) => {
@@ -600,23 +660,15 @@ Priority choices: Critical, High, Medium, Low.
           extractedList.push({
             id: `${noteToAnalyze.id}-task-${idx}`,
             title: phrase.charAt(0).toUpperCase() + phrase.slice(1),
-            category,
-            priority,
-            dueDate,
-            status: 'Inbox',
-            subtasks,
-            academicMemoryAction
+            category, priority, dueDate, status: 'Inbox', subtasks, academicMemoryAction
           });
         });
       }
 
-      setNotes(prev => prev.map(n => {
-        if (n.id === noteToAnalyze.id) {
-          return { ...n, extractedTasks: extractedList, isAiAnalyzed: true };
-        }
-        return n;
-      }));
-      triggerAlert('AI Task Intelligence extracted actionable items!', 'success');
+      setNotes(prev => prev.map(n =>
+        n.id === noteToAnalyze.id ? { ...n, extractedTasks: extractedList, isAiAnalyzed: true } : n
+      ));
+      triggerAlert('AI extracted actionable items from your note.', 'success');
       playSynthSound('success');
     } catch (err: any) {
       console.error(err);
@@ -625,14 +677,13 @@ Priority choices: Critical, High, Medium, Low.
     }
   };
 
-  // Placement Hub states
+  // ─── Placement ────────────────────────────────────────────────────
   const [companyName, setCompanyName] = useState<string>('');
   const [jobRole, setJobRole] = useState<string>('');
   const [isAnalyzingMatch, setIsAnalyzingMatch] = useState<boolean>(false);
   const [companyMatchResult, setCompanyMatchResult] = useState<string>('');
   const [companyInfoSearch, setCompanyInfoSearch] = useState<string>('');
   const [matchScore, setMatchScore] = useState<number | null>(null);
-
   const [isAnalyzingAts, setIsAnalyzingAts] = useState<boolean>(false);
   const [atsResult, setAtsResult] = useState<{
     score: number;
@@ -642,19 +693,6 @@ Priority choices: Critical, High, Medium, Low.
     keywordsMissing: string[];
   } | null>(null);
 
-  // Render text replacing **bold** with <strong> elements safely in React
-  const renderFormattedText = (text: string) => {
-    if (!text) return null;
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={index}>{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  };
-
-  // Extract text from base64 PDF resume using pdfjs-dist
   const extractTextFromResume = async (dataUrl: string): Promise<string> => {
     try {
       if (!dataUrl) return '';
@@ -663,9 +701,7 @@ Priority choices: Critical, High, Medium, Low.
       const binaryString = window.atob(base64Data);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
       const loadingTask = pdfjsLib.getDocument({ data: bytes });
       const pdf = await loadingTask.promise;
       let fullText = '';
@@ -677,9 +713,8 @@ Priority choices: Critical, High, Medium, Low.
       }
       const extracted = fullText.trim();
       if (extracted) {
-        // Auto-ingest into local vector DB
         ragService.ingestResume(extracted).then(count => {
-          console.log(`[Local RAG] Ingested ${count} resume vector chunks into local DB.`);
+          console.log(`[Local RAG] Ingested ${count} resume chunks.`);
         });
       }
       return extracted;
@@ -688,34 +723,22 @@ Priority choices: Critical, High, Medium, Low.
       throw new Error(`Failed to extract text from PDF: ${err.message}`);
     }
   };
-  // Expand common job role abbreviations so search queries make sense
+
   const expandRoleAbbreviation = (role: string): string => {
     const roleMap: Record<string, string> = {
-      'swe': 'Software Engineer',
-      'sde': 'Software Development Engineer',
-      'pm': 'Product Manager',
-      'tpm': 'Technical Program Manager',
-      'ml': 'Machine Learning Engineer',
-      'mle': 'Machine Learning Engineer',
-      'ds': 'Data Scientist',
-      'de': 'Data Engineer',
-      'sre': 'Site Reliability Engineer',
-      'devops': 'DevOps Engineer',
-      'ui': 'UI Engineer',
-      'ux': 'UX Designer',
-      'fe': 'Frontend Engineer',
-      'be': 'Backend Engineer',
-      'fs': 'Full Stack Engineer',
+      'swe': 'Software Engineer', 'sde': 'Software Development Engineer',
+      'pm': 'Product Manager', 'tpm': 'Technical Program Manager',
+      'ml': 'Machine Learning Engineer', 'mle': 'Machine Learning Engineer',
+      'ds': 'Data Scientist', 'de': 'Data Engineer', 'sre': 'Site Reliability Engineer',
+      'devops': 'DevOps Engineer', 'ui': 'UI Engineer', 'ux': 'UX Designer',
+      'fe': 'Frontend Engineer', 'be': 'Backend Engineer', 'fs': 'Full Stack Engineer',
     };
     return roleMap[role.toLowerCase().trim()] || role;
   };
 
-  // Web search tool — fetches real job role requirements from DuckDuckGo HTML search
   const fetchWebSearch = async (company: string, role: string): Promise<string> => {
     const expandedRole = expandRoleAbbreviation(role);
     const roleQuery = `${expandedRole} engineer role at ${company} skills requirements responsibilities interview`;
-
-    // Attempt 1: DuckDuckGo HTML search via AllOrigins CORS proxy — gets real search result snippets
     try {
       const ddgUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(roleQuery)}`)}`;
       const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(5000) });
@@ -728,27 +751,19 @@ Priority choices: Critical, High, Medium, Low.
           .filter(s => s && s.length > 20)
           .slice(0, 4);
         if (snippets.length > 0) {
-          return `${expandedRole} at ${company} — Live Search Results:\n${snippets.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+          return `${expandedRole} at ${company} — Search Results:\n${snippets.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
         }
       }
-    } catch (e) {
-      console.warn('DuckDuckGo HTML Proxy search failed:', e);
-    }
-
-    // Attempt 2: DuckDuckGo JSON API
+    } catch (e) { console.warn('DDG HTML search failed:', e); }
     try {
       const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(roleQuery)}&format=json`, { signal: AbortSignal.timeout(4000) });
       if (res.ok) {
         const data = await res.json();
         if (data.AbstractText && data.AbstractText.length > 30) {
-          return `${expandedRole} Role — DuckDuckGo: ${data.AbstractText}`;
+          return `${expandedRole} Role: ${data.AbstractText}`;
         }
       }
-    } catch (e) {
-      console.warn('DDG JSON API fetch error:', e);
-    }
-
-    // Smart structured fallback — never use Wikipedia for job roles
+    } catch (e) { console.warn('DDG JSON API failed:', e); }
     return `${expandedRole} Role Requirements at ${company}:
 1. Proficiency in relevant programming languages, algorithms, data structures, and system design.
 2. Hands-on project experience demonstrating engineering depth and problem-solving impact.
@@ -762,128 +777,92 @@ Priority choices: Critical, High, Medium, Low.
       return;
     }
     if (!studentProfile.resumeData) {
-      triggerAlert('Resume not uploaded! Please upload your resume in the Profile tab first.', 'error');
+      triggerAlert('Resume not uploaded. Please upload your resume in the Profile tab first.', 'error');
       return;
     }
-
     setIsAnalyzingMatch(true);
     setCompanyMatchResult('');
     setCompanyInfoSearch('');
     setMatchScore(null);
     playSynthSound('click');
     try {
-      const enableSearch = window.confirm("Would you like to search the web for real-time role requirements? (If Cancel, local AI model knowledge will be used.)");
-      
-      // 1. Extract text from resume
+      const enableSearch = window.confirm('Would you like to search the web for real-time role requirements?');
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
-      
-      // 2. Perform Web Search — search specifically for ROLE requirements
-      let searchResults = "Use local AI knowledge for requirements of this role.";
+      let searchResults = 'Use local AI knowledge for requirements of this role.';
       if (enableSearch) {
         triggerAlert(`Searching web for ${jobRole} role requirements...`, 'info');
         searchResults = await fetchWebSearch(companyName, jobRole);
         setCompanyInfoSearch(searchResults);
       } else {
-        setCompanyInfoSearch("Web search disabled by user. Using local model knowledge.");
+        setCompanyInfoSearch('Web search disabled. Using local model knowledge.');
       }
-
-      // 3. Local RAG Retrieval
       triggerAlert('Performing local RAG vector similarity search...', 'info');
       const ragChunks = await ragService.queryRAGContext(`${jobRole} ${companyName}`, 3);
       const ragContextFormatted = ragChunks.length > 0
-        ? ragChunks.map((c, i) => `Context ${i+1} (${c.source}): ${c.content.substring(0, 180)}`).join('\n')
-        : "No personal context found.";
-
-      // 4. Calculate dynamic Match Score based on skill overlap
+        ? ragChunks.map((c, i) => `Context ${i + 1} (${c.source}): ${c.content.substring(0, 180)}`).join('\n')
+        : 'No personal context found.';
       const candidateSkills = (studentProfile.skills || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
       const matched = candidateSkills.filter(s => resumeText.toLowerCase().includes(s) || searchResults.toLowerCase().includes(s));
       const calculatedScore = candidateSkills.length > 0 ? Math.round((matched.length / candidateSkills.length) * 100) : 75;
       const realMatchScore = Math.max(52, Math.min(96, calculatedScore));
-
-      // 5. Build prompt — use simple numbered list format, which Gemma handles reliably
       triggerAlert('Analyzing match with local AI...', 'info');
       const truncatedResume = resumeText.substring(0, 350);
       const truncatedSearch = searchResults.substring(0, 350);
-
       const analysisPrompt = `You are a career advisor helping a student named ${studentProfile.name}.
-
 Their skills are: ${studentProfile.skills}
-
 Their personal background context (from their notes and resume):
 ${ragContextFormatted}
-
 Their resume content:
 ${truncatedResume}
-
 Job role requirements for ${jobRole} at ${companyName} based on web research:
 ${truncatedSearch}
-
 Write a 2-sentence evaluation of how well they match the ${jobRole} role.
 Then list exactly 3 specific improvements they should make to be a better candidate.
-
 Output exactly in this format, no extra text:
 Evaluation: [your 2 sentence evaluation here]
 1. [first specific improvement]
 2. [second specific improvement]
 3. [third specific improvement]`;
-
       const status = await LlmInference.getStatus();
       const model = MODELS.find(m => m.id === chatModelId);
-      if (!model) throw new Error('Active model not found in list.');
-      
+      if (!model) throw new Error('Active model not found.');
       const modelState = modelStates[chatModelId];
       const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-      if (!isDownloaded) {
-        throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Downloader tab first.`);
-      }
-
+      if (!isDownloaded) throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Models tab first.`);
       if (!status.isLoaded || status.loadedModelId !== chatModelId) {
         triggerAlert(`Loading ${model.name} into RAM...`, 'info');
         const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
         if (!loadResult.loaded) throw new Error('Failed to load local model.');
       }
-
       triggerAlert(`Analyzing match locally using ${model.name}...`, 'info');
       const result = await LlmInference.generateResponse({ prompt: analysisPrompt });
       const analysisResultText = result.response || '';
-
-      // Robust parser: look for "Evaluation:" line + numbered list "1. ... 2. ... 3. ..."
       let fitAnalysis = '';
       const suggestions: string[] = [];
-
       const lines = analysisResultText.split('\n').map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
         if (/^evaluation:/i.test(line)) {
           fitAnalysis = line.replace(/^evaluation:/i, '').trim();
         } else if (/^\d+\.\s+.+/.test(line)) {
-          // numbered list item: "1. something real"
           const sug = line.replace(/^\d+\.\s+/, '').trim();
-          if (sug && !/^\[.*\]$/.test(sug)) { // ignore placeholder brackets
-            suggestions.push(sug);
-          }
+          if (sug && !/^\[.*\]$/.test(sug)) suggestions.push(sug);
         }
       }
-
-      // If evaluation line not found, try grabbing first substantial sentence
       if (!fitAnalysis) {
         const firstSentence = lines.find(l => l.length > 30 && !/^\d+\./.test(l) && !/^evaluation:/i.test(l));
         fitAnalysis = firstSentence || `Candidate shows ${realMatchScore}% alignment with ${companyName}'s ${jobRole} role based on skills: ${matched.join(', ') || candidateSkills.slice(0, 3).join(', ')}.`;
       }
-
-      // Smart fallback suggestions using actual student data
       if (suggestions.length === 0) {
-        const missingSkills = ['system design', 'low-level coding', 'distributed systems', 'performance optimization', 'cloud architecture']
-          .filter(s => !resumeText.toLowerCase().includes(s));
-        suggestions.push(`Highlight your ${candidateSkills.slice(0, 2).join(' and ')} projects with measurable impact metrics (e.g., reduced load time by 30%).`);
+        const missingSkills = ['system design', 'low-level coding', 'distributed systems', 'performance optimization', 'cloud architecture'].filter(s => !resumeText.toLowerCase().includes(s));
+        suggestions.push(`Highlight your ${candidateSkills.slice(0, 2).join(' and ')} projects with measurable impact metrics.`);
         suggestions.push(`Build and showcase a project demonstrating ${missingSkills[0] || 'system design'} skills relevant to ${companyName}'s scale.`);
         suggestions.push(`Add quantifiable achievements to your resume — ${companyName} looks for impact metrics in ${jobRole} candidates.`);
       }
-
       setMatchScore(realMatchScore);
-      setCompanyMatchResult(fitAnalysis + "\n\n### Suggestions:\n" + suggestions.map(s => `- ${s}`).join('\n'));
+      setCompanyMatchResult(fitAnalysis + '\n\n### Suggestions:\n' + suggestions.map(s => `- ${s}`).join('\n'));
       playSynthSound('success');
-      triggerAlert('AI Job Matching Analysis completed!', 'success');
+      triggerAlert('AI Job Match Analysis completed.', 'success');
     } catch (err: any) {
       console.error(err);
       triggerAlert(`Job Match Analysis failed: ${err.message}`, 'error');
@@ -894,40 +873,26 @@ Evaluation: [your 2 sentence evaluation here]
 
   const handleAnalyzeATS = async () => {
     if (!studentProfile.resumeData) {
-      triggerAlert('Resume not uploaded! Please upload your resume in the Profile tab first.', 'error');
+      triggerAlert('Resume not uploaded. Please upload your resume in the Profile tab first.', 'error');
       return;
     }
-
     setIsAnalyzingAts(true);
     setAtsResult(null);
     playSynthSound('click');
-
     try {
-      // 1. Extract text from resume
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
-
-      if (!resumeText) {
-        throw new Error('Unable to extract text content from your resume PDF.');
-      }
-
-      // 2. Calculate DYNAMIC ATS score based on actual resume structure & word count
+      if (!resumeText) throw new Error('Unable to extract text content from your resume PDF.');
       const sectionsList = ['education', 'experience', 'skills', 'projects', 'certifications', 'summary', 'languages'];
       const foundSections = sectionsList.filter(sec => new RegExp(`\\b${sec}\\b`, 'i').test(resumeText));
-      const sectionScore = (foundSections.length / 5) * 40; // max 40 pts
-
+      const sectionScore = (foundSections.length / 5) * 40;
       const wordCount = resumeText.split(/\s+/).filter(Boolean).length;
-      const lengthScore = wordCount >= 200 && wordCount <= 800 ? 30 : wordCount > 800 ? 20 : 10; // max 30 pts
-
+      const lengthScore = wordCount >= 200 && wordCount <= 800 ? 30 : wordCount > 800 ? 20 : 10;
       const profileSkills = (studentProfile.skills || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
       const matchedSkills = profileSkills.filter(skill => resumeText.toLowerCase().includes(skill));
-      const skillScore = profileSkills.length > 0 ? (matchedSkills.length / profileSkills.length) * 30 : 20; // max 30 pts
-
+      const skillScore = profileSkills.length > 0 ? (matchedSkills.length / profileSkills.length) * 30 : 20;
       const realAtsScore = Math.max(48, Math.min(97, Math.round(sectionScore + lengthScore + skillScore)));
-
-      // 3. Single-Step Gemma Prompting
       triggerAlert('Running ATS compatibility analysis locally...', 'info');
-
       const truncatedResume = resumeText.substring(0, 1000);
       const atsPrompt = `Analyze ATS compatibility for candidate resume.
 
@@ -943,29 +908,21 @@ ATS EVALUATION: <2 sentences>
 SUGGESTION 1: <advice>
 SUGGESTION 2: <advice>
 SUGGESTION 3: <advice>`;
-
       const status = await LlmInference.getStatus();
       const model = MODELS.find(m => m.id === chatModelId);
-      if (!model) throw new Error('Active model not found in list.');
-
+      if (!model) throw new Error('Active model not found.');
       const modelState = modelStates[chatModelId];
       const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-      if (!isDownloaded) {
-        throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Downloader tab first.`);
-      }
-
+      if (!isDownloaded) throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Models tab first.`);
       if (!status.isLoaded || status.loadedModelId !== chatModelId) {
         triggerAlert(`Loading ${model.name} into RAM...`, 'info');
         const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
         if (!loadResult.loaded) throw new Error('Failed to load local model.');
       }
-
       const result = await LlmInference.generateResponse({ prompt: atsPrompt });
       const rawResponse = result.response || '';
-
       let feedback = '';
       const suggestions: string[] = [];
-
       const lines = rawResponse.split('\n').map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
         if (/^ATS EVALUATION:/i.test(line)) {
@@ -977,30 +934,18 @@ SUGGESTION 3: <advice>`;
           suggestions.push(line.substring(1).trim());
         }
       }
-
-      if (!feedback) {
-        feedback = `Resume parsed successfully with ${foundSections.length} core ATS sections detected (${foundSections.join(', ') || 'Standard Sections'}). Formatting and structure align well with automated scanners.`;
-      }
+      if (!feedback) feedback = `Resume parsed with ${foundSections.length} core ATS sections detected (${foundSections.join(', ') || 'Standard sections'}). Formatting and structure align with automated scanners.`;
       if (suggestions.length === 0) {
-        suggestions.push('Ensure standard section headers (e.g. Education, Experience, Technical Skills) are clearly formatted.');
-        suggestions.push('Include quantifiable achievement metrics (e.g. %, numbers, dollar values) in experience bullet points.');
+        suggestions.push('Ensure standard section headers are clearly formatted.');
+        suggestions.push('Include quantifiable achievement metrics in experience bullet points.');
         suggestions.push('Add missing industry keywords related to target job descriptions.');
       }
-
       const standardKeywords = ['Git', 'Docker', 'CI/CD', 'TypeScript', 'SQL', 'System Design', 'Cloud'];
       const keywordsFoundList = matchedSkills.length > 0 ? matchedSkills : (profileSkills.length > 0 ? profileSkills : ['Resume Formatting', 'Technical Profile']);
       const keywordsMissingList = standardKeywords.filter(kw => !resumeText.toLowerCase().includes(kw.toLowerCase())).slice(0, 4);
-
-      setAtsResult({
-        score: realAtsScore,
-        feedback,
-        suggestions,
-        keywordsFound: keywordsFoundList,
-        keywordsMissing: keywordsMissingList
-      });
-
+      setAtsResult({ score: realAtsScore, feedback, suggestions, keywordsFound: keywordsFoundList, keywordsMissing: keywordsMissingList });
       playSynthSound('success');
-      triggerAlert('ATS compatibility analysis completed!', 'success');
+      triggerAlert('ATS compatibility analysis completed.', 'success');
     } catch (err: any) {
       console.error(err);
       triggerAlert(`ATS Analysis failed: ${err.message}`, 'error');
@@ -1009,31 +954,26 @@ SUGGESTION 3: <advice>`;
     }
   };
 
-  // HF Token state
-  const [hfToken, setHfToken] = useState<string>(() => {
-    return localStorage.getItem('hf_token_demo') || import.meta.env.VITE_HF_TOKEN || '';
-  });
+  // ─── Token & Model states ─────────────────────────────────────────
+  const [hfToken, setHfToken] = useState<string>(() => localStorage.getItem('hf_token_demo') || import.meta.env.VITE_HF_TOKEN || '');
   const [isTokenSaved, setIsTokenSaved] = useState<boolean>(false);
   const [isTokenVisible, setIsTokenVisible] = useState<boolean>(false);
 
-  // Model States
-  const [modelStates, setModelStates] = useState<Record<string, ModelState>>(() => {
-    return {
-      'gemma-4-e2b-it': { status: 'idle', progress: 0, downloadedBytes: 0 },
-      'gemma-2b-it-v1-cpu': { status: 'idle', progress: 0, downloadedBytes: 0 },
-      'gemma-2b-it-gpu-int4': { status: 'idle', progress: 0, downloadedBytes: 0 },
-      'whisper-tiny': { status: 'idle', progress: 0, downloadedBytes: 0 }
-    };
-  });
+  const [modelStates, setModelStates] = useState<Record<string, ModelState>>(() => ({
+    'gemma-4-e2b-it':       { status: 'idle', progress: 0, downloadedBytes: 0 },
+    'gemma-2b-it-v1-cpu':   { status: 'idle', progress: 0, downloadedBytes: 0 },
+    'gemma-2b-it-gpu-int4': { status: 'idle', progress: 0, downloadedBytes: 0 },
+    'whisper-tiny':         { status: 'idle', progress: 0, downloadedBytes: 0 }
+  }));
 
-  // Chatbot states
+  // ─── Chat ─────────────────────────────────────────────────────────
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [chatModelId, setChatModelId] = useState<string>('gemma-4-e2b-it');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       sender: 'model',
-      text: 'Hello! I am your local AI assistant. Choose an installed model from the dropdown above to start a private, offline chat session.',
+      text: 'Hello! I am your local AI assistant.\n\nChoose an installed model from the selector above to start a private, **offline** chat session. Your notes and resume are automatically available as context.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -1041,25 +981,24 @@ SUGGESTION 3: <advice>`;
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [extendedThinking, setExtendedThinking] = useState<boolean>(false);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
 
-  // Student Profile State (100% Local Storage)
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [chatMessages, isTyping]);
+
+  // ─── Student Profile ──────────────────────────────────────────────
   const [isFullscreenResumeOpen, setIsFullscreenResumeOpen] = useState<boolean>(false);
   const [studentProfile, setStudentProfile] = useState<{
-    name: string;
-    email: string;
-    studentId: string;
-    course: string;
-    skills: string;
-    bio: string;
-    avatarPhoto: string;
-    resumeName: string;
-    resumeType: string;
-    resumeData: string; // base64 data URL
+    name: string; email: string; studentId: string; course: string;
+    skills: string; bio: string; avatarPhoto: string;
+    resumeName: string; resumeType: string; resumeData: string;
   }>(() => {
     const saved = localStorage.getItem('acro_student_profile');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { }
-    }
+    if (saved) { try { return JSON.parse(saved); } catch (e) {} }
     return {
       name: 'Alex Rivera',
       email: 'alex.rivera@student.acro.edu',
@@ -1067,20 +1006,14 @@ SUGGESTION 3: <advice>`;
       course: 'Computer Science & AI Engineering',
       skills: 'Python, Kotlin, PyTorch, React, Machine Learning',
       bio: 'Enthusiastic CS student specializing in edge AI inference, deep learning optimization, and mobile computing.',
-      avatarPhoto: '',
-      resumeName: '',
-      resumeType: '',
-      resumeData: ''
+      avatarPhoto: '', resumeName: '', resumeType: '', resumeData: ''
     };
   });
 
   const [resumeBlobUrl, setResumeBlobUrl] = useState<string>('');
 
   useEffect(() => {
-    if (!studentProfile.resumeData) {
-      setResumeBlobUrl('');
-      return;
-    }
+    if (!studentProfile.resumeData) { setResumeBlobUrl(''); return; }
     if (studentProfile.resumeData.startsWith('data:')) {
       try {
         const parts = studentProfile.resumeData.split(';base64,');
@@ -1089,19 +1022,13 @@ SUGGESTION 3: <advice>`;
           const raw = window.atob(parts[1]);
           const rawLength = raw.length;
           const uInt8Array = new Uint8Array(rawLength);
-          for (let i = 0; i < rawLength; ++i) {
-            uInt8Array[i] = raw.charCodeAt(i);
-          }
+          for (let i = 0; i < rawLength; ++i) { uInt8Array[i] = raw.charCodeAt(i); }
           const blob = new Blob([uInt8Array], { type: contentType });
           const url = URL.createObjectURL(blob);
           setResumeBlobUrl(url);
-          return () => {
-            URL.revokeObjectURL(url);
-          };
+          return () => { URL.revokeObjectURL(url); };
         }
-      } catch (e) {
-        setResumeBlobUrl(studentProfile.resumeData);
-      }
+      } catch (e) { setResumeBlobUrl(studentProfile.resumeData); }
     } else {
       setResumeBlobUrl(studentProfile.resumeData);
     }
@@ -1110,22 +1037,18 @@ SUGGESTION 3: <advice>`;
   const saveStudentProfile = (updated: typeof studentProfile) => {
     setStudentProfile(updated);
     localStorage.setItem('acro_student_profile', JSON.stringify(updated));
-    triggerAlert('Student Profile saved locally!', 'success');
+    triggerAlert('Profile saved locally.', 'success');
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      triggerAlert('Profile photo must be under 5MB.', 'error');
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { triggerAlert('Profile photo must be under 5 MB.', 'error'); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
-      const updated = { ...studentProfile, avatarPhoto: base64 };
-      saveStudentProfile(updated);
-      triggerAlert('Profile photo updated!', 'success');
+      saveStudentProfile({ ...studentProfile, avatarPhoto: base64 });
+      triggerAlert('Profile photo updated.', 'success');
     };
     reader.readAsDataURL(file);
   };
@@ -1133,62 +1056,39 @@ SUGGESTION 3: <advice>`;
   const handleResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      triggerAlert('File size exceeds 10MB limit.', 'error');
-      return;
-    }
-
+    if (file.size > 10 * 1024 * 1024) { triggerAlert('File size exceeds 10 MB limit.', 'error'); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
-      const updated = {
-        ...studentProfile,
-        resumeName: file.name,
-        resumeType: file.type || 'application/pdf',
-        resumeData: base64
-      };
-      saveStudentProfile(updated);
-      triggerAlert(`Resume "${file.name}" uploaded & saved locally!`, 'success');
+      saveStudentProfile({ ...studentProfile, resumeName: file.name, resumeType: file.type || 'application/pdf', resumeData: base64 });
+      triggerAlert(`Resume "${file.name}" saved locally.`, 'success');
     };
-    reader.onerror = () => {
-      triggerAlert('Failed to read resume file.', 'error');
-    };
+    reader.onerror = () => triggerAlert('Failed to read resume file.', 'error');
     reader.readAsDataURL(file);
   };
 
-  // Robust cross-platform base64 download helper for Android WebViews
   const handleDownloadResume = () => {
     if (!studentProfile.resumeData) return;
+    playSynthSound('click');
     try {
-      playSynthSound('click');
       const filename = studentProfile.resumeName || 'Student_Resume.pdf';
-      
-      // Convert base64 data URL to Blob for WebView download compatibility
       const parts = studentProfile.resumeData.split(';base64,');
       const contentType = parts[0].replace('data:', '');
       const raw = window.atob(parts[1]);
       const rawLength = raw.length;
       const uInt8Array = new Uint8Array(rawLength);
-      for (let i = 0; i < rawLength; ++i) {
-        uInt8Array[i] = raw.charCodeAt(i);
-      }
+      for (let i = 0; i < rawLength; ++i) { uInt8Array[i] = raw.charCodeAt(i); }
       const blob = new Blob([uInt8Array], { type: contentType });
       const blobUrl = URL.createObjectURL(blob);
-      
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = blobUrl;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      }, 1000);
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 1000);
       triggerAlert(`Downloading ${filename}...`, 'success');
     } catch (e) {
-      // Fallback direct link click
       const a = document.createElement('a');
       a.href = studentProfile.resumeData;
       a.download = studentProfile.resumeName || 'Student_Resume.pdf';
@@ -1196,18 +1096,15 @@ SUGGESTION 3: <advice>`;
     }
   };
 
-  // Toggles
+  // ─── Hardware toggles ─────────────────────────────────────────────
   const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
   const [gpuDelegateEnabled, setGpuDelegateEnabled] = useState<boolean>(true);
   const [gmailSync, setGmailSync] = useState<boolean>(true);
   const [githubSync, setGithubSync] = useState<boolean>(true);
 
-
-
-  // Feedback Alerts
+  // ─── Alert ───────────────────────────────────────────────────────
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Audio synthesis feedback
   const playSynthSound = (type: 'click' | 'success' | 'ping' | 'error' | 'delete') => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -1215,75 +1112,57 @@ SUGGESTION 3: <advice>`;
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       if (type === 'click') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(600, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.08, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.15);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.15);
+        osc.start(); osc.stop(ctx.currentTime + 0.15);
       } else if (type === 'success') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.12, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
+        osc.start(); osc.stop(ctx.currentTime + 0.35);
       } else if (type === 'ping') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(500, ctx.currentTime);
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(500, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.25);
         gain.gain.setValueAtTime(0.05, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.25);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.25);
+        osc.start(); osc.stop(ctx.currentTime + 0.25);
       } else if (type === 'error') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(110, ctx.currentTime + 0.3);
         gain.gain.setValueAtTime(0.1, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
+        osc.start(); osc.stop(ctx.currentTime + 0.35);
       } else if (type === 'delete') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(300, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
         gain.gain.setValueAtTime(0.08, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.2);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.2);
+        osc.start(); osc.stop(ctx.currentTime + 0.2);
       }
-    } catch (e) {
-      console.warn('Audio synthesis initialized failed:', e);
-    }
+    } catch (e) { console.warn('Audio synthesis failed:', e); }
   };
 
-  // Clean Top White Toast Feedback Helper (No emojis, no lower system drawer popup)
   const triggerAlert = (rawText: string, type: 'success' | 'info' | 'error' = 'info') => {
-    // Strip emojis
     const text = rawText.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
     setAlertMsg({ text, type });
     setTimeout(() => setAlertMsg(null), 3500);
   };
 
-  // Check models native status on load
+  // ─── Model lifecycle ──────────────────────────────────────────────
   useEffect(() => {
     const checkAllStatuses = async () => {
       const states: Record<string, ModelState> = {};
-      let totalSpaceTaken = 0;
       for (const m of MODELS) {
         try {
           const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
           if (res.status === 'installed') {
             states[m.id] = { status: 'installed', progress: 100, downloadedBytes: res.size };
-            totalSpaceTaken += res.size;
           } else if (res.status === 'downloading') {
             states[m.id] = { status: 'downloading', progress: Math.round((res.size / m.sizeBytes) * 100), downloadedBytes: res.size };
           } else {
@@ -1294,112 +1173,74 @@ SUGGESTION 3: <advice>`;
         }
       }
       setModelStates(states);
-      
       try {
         const nativeStorage = await ModelDownloader.getFreeStorage();
         if (nativeStorage && nativeStorage.freeBytes > 0) {
           setAvailableStorage(nativeStorage.freeBytes);
         } else if (navigator.storage && navigator.storage.estimate) {
           const estimate = await navigator.storage.estimate();
-          if (estimate.quota) {
-            setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
-          }
+          if (estimate.quota) setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
         }
       } catch (err) {
         if (navigator.storage && navigator.storage.estimate) {
           const estimate = await navigator.storage.estimate();
-          if (estimate.quota) {
-            setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
-          }
+          if (estimate.quota) setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
         }
       }
     };
-
     checkAllStatuses();
   }, []);
 
-  // Listen to native download progress events
   useEffect(() => {
     const listener = (ModelDownloader as any).addListener('downloadProgress', (data: any) => {
       const { modelId, status, downloadedBytes, progress, error } = data;
-      
-      setModelStates(prev => ({
-        ...prev,
-        [modelId]: {
-          status: status as any,
-          progress: progress || 0,
-          downloadedBytes: downloadedBytes || 0,
-          error
-        }
-      }));
-
+      setModelStates(prev => ({ ...prev, [modelId]: { status: status as any, progress: progress || 0, downloadedBytes: downloadedBytes || 0, error } }));
       if (status === 'installed') {
         playSynthSound('success');
         triggerAlert(`Installed ${MODELS.find(m => m.id === modelId)?.name} to local system.`, 'success');
         const model = MODELS.find(m => m.id === modelId);
-        if (model) {
-          setAvailableStorage(prev => Math.max(0, prev - model.sizeBytes));
-        }
+        if (model) setAvailableStorage(prev => Math.max(0, prev - model.sizeBytes));
       } else if (status === 'error') {
         playSynthSound('error');
         triggerAlert(`Download failed: ${error}`, 'error');
       }
     });
-
-    return () => {
-      listener.then((l: { remove: () => void }) => l.remove());
-    };
+    return () => { listener.then((l: { remove: () => void }) => l.remove()); };
   }, []);
 
-  // PWA installation detectors
   useEffect(() => {
-    // Start XFrame interceptor to bypass X-Frame-Options natively on Android
-    Xframe.start().then(() => {
-      console.log('XFrame interceptor started.');
-    }).catch(err => {
-      console.warn('XFrame plugin starting failed:', err);
-    });
+    Xframe.start().then(() => console.log('XFrame interceptor started.')).catch(err => console.warn('XFrame failed:', err));
   }, []);
 
-  // Refresh Storage
   const refreshStorage = async () => {
     playSynthSound('click');
     setIsRefreshingStorage(true);
-    
     try {
-      // 1. Native Android Storage API call (exact real-time StatFs disk space)
       const nativeStorage = await ModelDownloader.getFreeStorage();
       if (nativeStorage && nativeStorage.freeBytes > 0) {
         setAvailableStorage(nativeStorage.freeBytes);
       } else if (navigator.storage && navigator.storage.estimate) {
         const estimate = await navigator.storage.estimate();
-        if (estimate.quota) {
-          const free = Math.max(0, estimate.quota - (estimate.usage || 0));
-          setAvailableStorage(free);
-        }
+        if (estimate.quota) setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
       }
     } catch (err) {
       if (navigator.storage && navigator.storage.estimate) {
         const estimate = await navigator.storage.estimate();
-        if (estimate.quota) {
-          setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
-        }
+        if (estimate.quota) setAvailableStorage(Math.max(0, estimate.quota - (estimate.usage || 0)));
       }
     }
-
     setTimeout(() => {
       setIsRefreshingStorage(false);
       playSynthSound('success');
-      triggerAlert('Realtime device storage synchronized successfully.', 'success');
+      triggerAlert('Device storage synchronized.', 'success');
     }, 400);
   };
 
-  // Save token
   const saveToken = () => {
     playSynthSound('click');
     if (!hfToken.trim()) {
       playSynthSound('error');
-      triggerAlert('Hugging Face Access Token cannot be blank.', 'error');
+      triggerAlert('Hugging Face access token cannot be blank.', 'error');
       return;
     }
     localStorage.setItem('hf_token_demo', hfToken);
@@ -1408,140 +1249,87 @@ SUGGESTION 3: <advice>`;
     triggerAlert('Access token saved and encrypted in keystore.', 'success');
   };
 
-  // Format bytes helper
   const formatBytes = (bytes: number): string => {
     if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
     return (bytes / 1048576).toFixed(0) + ' MB';
   };
 
-  // Trigger native downloader
   const startDownload = async (modelId: string) => {
     playSynthSound('click');
     const model = MODELS.find(m => m.id === modelId);
     if (!model) return;
-
-    // Check token requirement
     if (model.gated && (!hfToken || hfToken.trim().length === 0)) {
       playSynthSound('error');
-      triggerAlert(`HuggingFace authentication required for gated model: ${model.name}.`, 'error');
+      triggerAlert(`Hugging Face authentication required for gated model: ${model.name}.`, 'error');
       return;
     }
-
-    // Check storage space
     if (availableStorage < model.sizeBytes) {
       playSynthSound('error');
-      triggerAlert('Insufficient disk storage. Free up space on device partition.', 'error');
+      triggerAlert('Insufficient disk storage. Free up space on device.', 'error');
       return;
     }
-
-    // Start Downloading state
-    setModelStates(prev => ({
-      ...prev,
-      [modelId]: { status: 'downloading', progress: 0, downloadedBytes: 0 }
-    }));
-
+    setModelStates(prev => ({ ...prev, [modelId]: { status: 'downloading', progress: 0, downloadedBytes: 0 } }));
     try {
-      await ModelDownloader.startDownload({
-        modelId: model.id,
-        url: model.downloadUrl,
-        hfToken: hfToken || '',
-        fileName: model.fileName,
-        sizeBytes: model.sizeBytes
-      });
+      await ModelDownloader.startDownload({ modelId: model.id, url: model.downloadUrl, hfToken: hfToken || '', fileName: model.fileName, sizeBytes: model.sizeBytes });
       triggerAlert(`Download initialized for ${model.name}.`);
     } catch (e: any) {
       playSynthSound('error');
-      setModelStates(prev => ({
-        ...prev,
-        [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0, error: e.message }
-      }));
+      setModelStates(prev => ({ ...prev, [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0, error: e.message } }));
       triggerAlert(`Failed to start download: ${e.message}`, 'error');
     }
   };
 
-  // Cancel native download
   const cancelDownload = async (modelId: string) => {
     playSynthSound('delete');
     try {
       await ModelDownloader.cancelDownload({ modelId });
-      setModelStates(prev => ({
-        ...prev,
-        [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
-      }));
-      triggerAlert('Download operation aborted.');
+      setModelStates(prev => ({ ...prev, [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 } }));
+      triggerAlert('Download aborted.');
     } catch (e: any) {
       triggerAlert(`Failed to cancel download: ${e.message}`, 'error');
     }
   };
 
-  // Load Model into RAM
   const loadModelToRam = (modelId: string) => {
     playSynthSound('click');
-    
-    // Unload any loaded model first
     setModelStates(prev => {
       const updated = { ...prev };
-      Object.keys(updated).forEach(key => {
-        if (updated[key].status === 'loaded') {
-          updated[key].status = 'installed';
-        }
-      });
+      Object.keys(updated).forEach(key => { if (updated[key].status === 'loaded') updated[key].status = 'installed'; });
       updated[modelId] = { status: 'loading', progress: 0, downloadedBytes: updated[modelId].downloadedBytes };
       return updated;
     });
-
     let loadProgress = 0;
     const interval = setInterval(() => {
       loadProgress += 10;
       setModelStates(prev => {
-        if (!prev[modelId] || prev[modelId].status !== 'loading') {
-          clearInterval(interval);
-          return prev;
-        }
-
+        if (!prev[modelId] || prev[modelId].status !== 'loading') { clearInterval(interval); return prev; }
         if (loadProgress >= 100) {
           clearInterval(interval);
           playSynthSound('ping');
-          triggerAlert(`🚀 LiteRT warm-up completed. ${MODELS.find(m => m.id === modelId)?.name} active in RAM.`, 'success');
-          return {
-            ...prev,
-            [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
-          };
+          triggerAlert(`LiteRT warm-up complete. ${MODELS.find(m => m.id === modelId)?.name} active in RAM.`, 'success');
+          return { ...prev, [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes } };
         }
-
-        return {
-          ...prev,
-          [modelId]: { status: 'loading', progress: loadProgress, downloadedBytes: prev[modelId].downloadedBytes }
-        };
+        return { ...prev, [modelId]: { status: 'loading', progress: loadProgress, downloadedBytes: prev[modelId].downloadedBytes } };
       });
     }, 1500);
   };
 
-  // Unload Model from RAM
   const unloadModelFromRam = (modelId: string) => {
     playSynthSound('click');
-    setModelStates(prev => ({
-      ...prev,
-      [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
-    }));
+    setModelStates(prev => ({ ...prev, [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes } }));
     triggerAlert('Model memory buffers deallocated.');
   };
 
-  // Delete local model file natively
   const deleteModel = async (modelId: string) => {
     playSynthSound('delete');
     const model = MODELS.find(m => m.id === modelId);
     if (!model) return;
-
     try {
       const res = await ModelDownloader.deleteModel({ modelId, fileName: model.fileName });
       if (res.deleted) {
-        setModelStates(prev => ({
-          ...prev,
-          [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 }
-        }));
+        setModelStates(prev => ({ ...prev, [modelId]: { status: 'idle', progress: 0, downloadedBytes: 0 } }));
         setAvailableStorage(prev => prev + model.sizeBytes);
-        triggerAlert(`🗑 Deleted local binary for ${model.name}.`);
+        triggerAlert(`Deleted ${model.name} from local storage.`);
       } else {
         triggerAlert('Failed to delete file from device storage.', 'error');
       }
@@ -1550,81 +1338,51 @@ SUGGESTION 3: <advice>`;
     }
   };
 
-  // Chat messaging handler — runs 100% on-device via native MediaPipe LlmInference
+  // ─── Chat message handler ─────────────────────────────────────────
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
-
     const model = MODELS.find(m => m.id === chatModelId);
-    if (!model) {
-      triggerAlert('Selected model not found.', 'error');
-      return;
-    }
-
-    // Check if model file is downloaded
+    if (!model) { triggerAlert('Selected model not found.', 'error'); return; }
     const modelState = modelStates[chatModelId];
     const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-
     if (!isDownloaded) {
-      triggerAlert(`${model.name} is not downloaded. Please download it first from the AI Downloader tab.`, 'error');
+      triggerAlert(`${model.name} is not downloaded. Please download it first from the AI Models tab.`, 'error');
       return;
     }
-
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       sender: 'user',
       text: chatInput.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-
     setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setIsTyping(true);
     playSynthSound('click');
-
     try {
-      // Step 1: Check if model is loaded in native RAM
       const status = await LlmInference.getStatus();
-
       if (!status.isLoaded || status.loadedModelId !== chatModelId) {
-        // Load model into device RAM
         triggerAlert(`Loading ${model.name} into device RAM...`, 'info');
-
         const useGpu = chatModelId === 'gemma-2b-it-gpu-int4' && gpuDelegateEnabled;
-        const loadResult = await LlmInference.loadModel({
-          modelId: chatModelId,
-          fileName: model.fileName,
-          useGpu
-        });
-
-        if (!loadResult.loaded) {
-          throw new Error('Failed to load model into RAM.');
-        }
-
+        const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu });
+        if (!loadResult.loaded) throw new Error('Failed to load model into RAM.');
         triggerAlert(`${model.name} loaded. Running inference...`, 'info');
       }
-
-      // Step 2: Build a personalized context-aware prompt using RAG + student profile
-      // Always include profile data — this is the student's personal AI assistant
       const profileContext = [
         studentProfile.name ? `Name: ${studentProfile.name}` : null,
         studentProfile.course ? `Studying: ${studentProfile.course}` : null,
         studentProfile.skills ? `Skills: ${studentProfile.skills}` : null,
         studentProfile.bio ? `Bio: ${studentProfile.bio}` : null,
       ].filter(Boolean).join('\n');
-
-      // Query RAG vector store — no similarity threshold, take top 3 best matches
       const ragChunks = await ragService.queryRAGContext(userMessage.text, 3);
       const ragStats = ragService.getVectorStoreStats();
-
       let augmentedPrompt: string;
-
       if (profileContext || ragChunks.length > 0) {
         const ragContextText = ragChunks.length > 0
-          ? ragChunks.map((c, i) => `[${c.source} - chunk ${i+1}]: ${c.content.substring(0, 250)}`).join('\n\n')
+          ? ragChunks.map((c, i) => `[${c.source} - chunk ${i + 1}]: ${c.content.substring(0, 250)}`).join('\n\n')
           : ragStats.totalChunks === 0
             ? 'No resume or notes uploaded yet.'
             : 'No closely relevant chunks for this query.';
-
         augmentedPrompt = `You are Acro AI, a personal AI assistant for a student. You have full access to their profile, resume, and notes below. Use this information to answer their question directly and personally.
 
 STUDENT PROFILE:
@@ -1639,27 +1397,20 @@ Answer directly and personally using the student's profile and context above. Do
       } else {
         augmentedPrompt = userMessage.text;
       }
-
-      // Step 3: Run on-device inference
-      const result = await LlmInference.generateResponse({
-        prompt: augmentedPrompt
-      });
-
+      const result = await LlmInference.generateResponse({ prompt: augmentedPrompt });
       const timeSec = result.timeMs / 1000;
-      const tokPerSec = result.tokenCount > 0 ? (result.tokenCount / timeSec).toFixed(1) : '—';
-
+      const tokPerSec = result.tokenCount > 0 ? (result.tokenCount / timeSec).toFixed(1) : null;
       const modelMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'model',
         text: result.response || 'No response generated.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         stats: {
-          speed: `${tokPerSec} tok/s`,
+          speed: tokPerSec ? `${tokPerSec} tok/s` : '',
           time: `${timeSec.toFixed(1)}s`,
           hardware: `On-Device (${chatModelId.includes('gpu') ? 'GPU' : 'CPU'})`
         }
       };
-
       setChatMessages(prev => [...prev, modelMessage]);
       playSynthSound('success');
     } catch (err: any) {
@@ -1667,7 +1418,7 @@ Answer directly and personally using the student's profile and context above. Do
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'model',
-        text: `⚠️ On-device inference failed: ${err.message || 'Unknown error'}. Make sure the model is fully downloaded and try again.`,
+        text: `On-device inference failed: ${err.message || 'Unknown error'}. Make sure the model is fully downloaded and try again.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setChatMessages(prev => [...prev, errorMessage]);
@@ -1677,232 +1428,233 @@ Answer directly and personally using the student's profile and context above. Do
     }
   };
 
+  // ─── Derived state ────────────────────────────────────────────────
+  const isChatModelInstalled = modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded';
+  const userInitials = studentProfile.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+
+  const filteredNotes = notes
+    .filter(n => showArchived ? n.isArchived : !n.isArchived)
+    .filter(n => {
+      if (!noteSearchQuery.trim()) return true;
+      const q = noteSearchQuery.toLowerCase();
+      return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    })
+    .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  RENDER
+  // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="app-container">
-      {/* Top Floating White Notification Toast */}
+    <div className="app-shell">
+
+      {/* ── Toast ── */}
       {alertMsg && (
-        <div className={`top-notification-banner ${alertMsg.type}`}>
-          <div className="notification-content">
-            <Bell size={16} className="notification-icon" />
-            <span>{alertMsg.text}</span>
-          </div>
-          <button className="notification-close" onClick={() => setAlertMsg(null)}>
-            <X size={14} />
+        <div className={`toast ${alertMsg.type}`} role="alert" aria-live="polite">
+          <div className="toast-icon" />
+          <span className="toast-text">{alertMsg.text}</span>
+          <button className="toast-close" onClick={() => setAlertMsg(null)} aria-label="Dismiss">
+            <X size={14} weight="bold" />
           </button>
         </div>
       )}
 
-      {/* Header */}
-      <header>
-        <div 
-          className="brand" 
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('home');
-          }}
-          style={{ cursor: 'pointer' }}
-          title="Return to Home Screen"
-        >
-          <img src="/acro-logo.png" alt="Acro Logo" className="brand-logo-img" />
-          <div className="brand-text">
-            <h1>Acro</h1>
-            <span className="brand-subtitle">AI Suite</span>
-          </div>
-        </div>
-
-        <div className="header-actions">
-          <button 
-            className={`profile-btn-header ${activeTab === 'profile' ? 'active' : ''}`}
-            onClick={() => {
-              playSynthSound('click');
-              setActiveTab('profile');
-            }}
-            title="Student Profile & Resume"
+      {/* ── Header ── */}
+      <header className="app-header">
+        <div className="app-header-inner">
+          <button
+            className="brand"
+            onClick={() => { playSynthSound('click'); setActiveTab('home'); }}
+            aria-label="Go to Home"
           >
-            <User size={18} />
+            <img src="/acro-logo.png" alt="Acro Logo" className="brand-logo" />
+            <div>
+              <div className="brand-name">Acro</div>
+              <div className="brand-tag">AI Suite</div>
+            </div>
           </button>
+
+          <div className="header-right">
+            <button
+              className={`icon-btn ${activeTab === 'profile' ? 'active' : ''}`}
+              onClick={() => { playSynthSound('click'); setActiveTab('profile'); }}
+              aria-label="Profile"
+            >
+              {studentProfile.avatarPhoto
+                ? <img src={studentProfile.avatarPhoto} alt="Avatar" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+                : <User size={20} weight="regular" />
+              }
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Home Tab Panel (Notepad & App Focus Lock) */}
+      {/* ══════════════ HOME TAB ══════════════ */}
       {activeTab === 'home' && (
-        <div className="dashboard-grid">
-
-          {/* Notepad Header Controls */}
-          <div className="notepad-section-header">
-            <div className="notepad-title-group">
-              <StickyNote size={22} className="notepad-icon" />
-              <div>
-                <h2>My Quick Notes</h2>
-                <span className="notepad-subtitle">Personal Study Pad • Task & Academic Intelligence</span>
-              </div>
+        <div className="tab-content">
+          {/* Toolbar */}
+          <div className="notes-toolbar">
+            <div className="notes-toolbar-title">
+              <h2>Notes</h2>
+              <p>Your study pad with AI task extraction</p>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <label className="btn btn-secondary btn-sm" title="Upload PDF Attachment to Note" style={{ cursor: 'pointer' }}>
-                <Upload size={14} /> PDF Note
-                <input type="file" accept=".pdf" onChange={handlePdfAttachmentUpload} style={{ display: 'none' }} />
-              </label>
-              <button className="lock-apps-btn" onClick={handleOpenLockModal} title="Focus Lock Apps">
-                <Lock size={16} />
-                <span>Lock Apps</span>
-              </button>
-            </div>
+            <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} title="Upload PDF">
+              <Upload size={14} weight="bold" /> PDF
+              <input type="file" accept=".pdf" onChange={handlePdfAttachmentUpload} style={{ display: 'none' }} />
+            </label>
+            <button className="btn btn-secondary btn-sm" onClick={handleOpenLockModal} title="App Focus Lock">
+              <Lock size={14} weight="bold" /> Focus
+            </button>
           </div>
 
-          {/* Search & Archive Toolbar */}
-          <div className="note-toolbar">
-            <div className="note-search-box">
-              <Search size={16} className="search-icon" />
-              <input
-                type="text"
-                placeholder="Search notes..."
-                value={noteSearchQuery}
-                onChange={(e) => setNoteSearchQuery(e.target.value)}
-                className="note-search-input"
-              />
-            </div>
-
-            <div className="note-filter-pills">
-              <button
-                className={`filter-pill ${showArchived ? 'active' : ''}`}
-                onClick={() => setShowArchived(!showArchived)}
-              >
-                <Archive size={12} /> {showArchived ? 'Showing Archived' : 'Archive'}
-              </button>
-            </div>
+          {/* Search */}
+          <div className="search-bar">
+            <MagnifyingGlass size={16} weight="bold" className="search-bar-icon" />
+            <input
+              type="search"
+              placeholder="Search notes..."
+              value={noteSearchQuery}
+              onChange={e => setNoteSearchQuery(e.target.value)}
+              className="search-input"
+            />
           </div>
 
-          {/* Notes Grid */}
-          <div className="notepad-grid">
-            {notes
-              .filter(n => showArchived ? n.isArchived : !n.isArchived)
-              .filter(n => {
-                if (!noteSearchQuery.trim()) return true;
-                const q = noteSearchQuery.toLowerCase();
-                return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
-              })
-              .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0))
-              .map((note) => (
+          {/* Filters */}
+          <div className="filter-row">
+            <button
+              className={`filter-chip ${showArchived ? 'active' : ''}`}
+              onClick={() => setShowArchived(!showArchived)}
+            >
+              <Archive size={12} weight={showArchived ? 'fill' : 'regular'} />
+              {showArchived ? 'Archived' : 'Archive'}
+            </button>
+          </div>
+
+          {/* Notes List */}
+          {filteredNotes.length > 0 ? (
+            <div className="notes-list">
+              {filteredNotes.map(note => (
                 <div
                   key={note.id}
-                  className={`note-card ${note.isPinned ? 'pinned' : ''}`}
-                  style={{ backgroundColor: note.color || 'var(--bg-card)' }}
+                  className="note-row"
                   onClick={() => { playSynthSound('click'); setActiveViewNote(note); }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && setActiveViewNote(note)}
                 >
-                  <div className="note-card-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      {note.isPinned && <Pin size={14} className="pinned-icon" />}
-                      <h3 className="note-card-title">{note.title}</h3>
+                  <div
+                    className="note-color-dot"
+                    style={{ background: note.color || 'var(--border-strong)' }}
+                  />
+                  <div className="note-row-body">
+                    <div className="note-row-header">
+                      {note.isPinned && <PushPin size={12} weight="fill" style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                      <span className="note-row-title">{note.title}</span>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }} onClick={(e) => e.stopPropagation()}>
-                      <button className="note-action-icon-btn" onClick={(e) => handleToggleStar(note.id, e)} title="Star Note">
-                        <Star size={14} style={{ fill: note.isStarred ? '#eab308' : 'none', color: note.isStarred ? '#eab308' : 'var(--text-muted)' }} />
-                      </button>
-                      <button className="note-action-icon-btn" onClick={(e) => handleTogglePin(note.id, e)} title="Pin Note">
-                        <Pin size={14} style={{ color: note.isPinned ? 'var(--color-indigo)' : 'var(--text-muted)' }} />
-                      </button>
-                      <button className="note-action-icon-btn" onClick={(e) => handleToggleArchive(note.id, e)} title="Archive Note">
-                        <Archive size={14} style={{ color: note.isArchived ? '#16a34a' : 'var(--text-muted)' }} />
-                      </button>
+                    <p className="note-row-excerpt">{note.content}</p>
+                    <div className="note-row-meta">
+                      <span className="note-date">{note.date}</span>
+                      {note.tags?.slice(0, 2).map((t, i) => <span key={i} className="note-tag">{t}</span>)}
+                      {note.pdfAttachment && <span className="note-tag" style={{ background: '#fee2e2', color: '#dc2626' }}>PDF</span>}
+                      {note.isAiAnalyzed && <span className="note-tag" style={{ background: 'var(--success-light)', color: 'var(--success)' }}>AI</span>}
                     </div>
                   </div>
-
-                  <p className="note-card-content">{note.content}</p>
-
-                  {note.pdfAttachment && (
-                    <div className="note-pdf-badge" onClick={(e) => e.stopPropagation()}>
-                      <FileText size={14} />
-                      <span className="pdf-name">{note.pdfAttachment.name}</span>
-                    </div>
-                  )}
-
-                  {note.tags && note.tags.length > 0 && (
-                    <div className="note-tags-row">
-                      {note.tags.map((t, idx) => (
-                        <span key={idx} className="note-tag-chip">#{t}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-                    <span className="note-card-date">{note.date}</span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-indigo)', fontWeight: 600 }}>Tap to expand AI Tasks ↗</span>
+                  <div className="note-row-actions" onClick={e => e.stopPropagation()}>
+                    <button
+                      className="note-icon-btn"
+                      onClick={e => handleTogglePin(note.id, e)}
+                      aria-label="Pin note"
+                    >
+                      <PushPin size={15} weight={note.isPinned ? 'fill' : 'regular'} style={{ color: note.isPinned ? 'var(--accent)' : 'var(--text-3)' }} />
+                    </button>
+                    <button
+                      className="note-icon-btn"
+                      onClick={e => handleToggleStar(note.id, e)}
+                      aria-label="Star note"
+                    >
+                      <Star size={15} weight={note.isStarred ? 'fill' : 'regular'} style={{ color: note.isStarred ? '#f59e0b' : 'var(--text-3)' }} />
+                    </button>
+                    <button
+                      className="note-icon-btn"
+                      onClick={e => handleToggleArchive(note.id, e)}
+                      aria-label="Archive note"
+                    >
+                      <Archive size={15} weight={note.isArchived ? 'fill' : 'regular'} style={{ color: note.isArchived ? 'var(--success)' : 'var(--text-3)' }} />
+                    </button>
                   </div>
                 </div>
               ))}
-          </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-3)' }}>
+              <Note size={40} weight="thin" style={{ marginBottom: '0.75rem', opacity: 0.5 }} />
+              <p style={{ fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.25rem' }}>
+                {showArchived ? 'No archived notes' : 'No notes yet'}
+              </p>
+              <p style={{ fontSize: '0.8125rem' }}>
+                {showArchived ? 'Archived notes will appear here.' : 'Tap the + button to add your first note.'}
+              </p>
+            </div>
+          )}
 
-          {/* Floating Plus Button for Adding Notes */}
-          <button className="add-note-fab" onClick={() => { playSynthSound('click'); setIsAddNoteOpen(true); }} title="Add New Note">
-            <Plus size={24} />
+          {/* FAB */}
+          <button
+            className="notes-fab"
+            onClick={() => { playSynthSound('click'); setIsAddNoteOpen(true); }}
+            aria-label="Add new note"
+          >
+            <Plus size={22} weight="bold" />
           </button>
         </div>
       )}
 
-      {/* AI Models Downloader Tab */}
+      {/* ══════════════ AI MODELS TAB ══════════════ */}
       {activeTab === 'downloader' && (
-        <div className="dashboard-grid">
-        
-        {/* Banner Section: Disk Space */}
-        <div className="storage-banner">
-          <div className="storage-info">
-            <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
-            <span className="storage-value">{formatBytes(availableStorage)}</span>
-          </div>
-          <button 
-            className="btn btn-secondary" 
-            onClick={refreshStorage} 
-            disabled={isRefreshingStorage}
-          >
-            <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
-            <span>Refresh Disk Space</span>
-          </button>
-        </div>
-
-        {/* Token Card */}
-        <div className="card-panel token-card">
-          <div>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
-              HUGGING FACE ACCESS TOKEN (SECURED)
-            </h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-              Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
-            </p>
-          </div>
-
-          <div className="input-row">
-            <input 
-              type={isTokenVisible ? 'text' : 'password'}
-              className="text-input"
-              value={hfToken}
-              onChange={(e) => {
-                setHfToken(e.target.value);
-                setIsTokenSaved(false);
-              }}
-              placeholder="hf_••••••••••••••••••••••••••••••••"
-            />
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => {
-                playSynthSound('click');
-                setIsTokenVisible(!isTokenVisible);
-              }}
-              style={{ padding: '0.5rem' }}
-              title={isTokenVisible ? 'Hide Key' : 'Show Key'}
-            >
-              {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <button className="btn btn-primary" onClick={saveToken}>
-              {isTokenSaved ? 'Saved ✓' : 'Save Key'}
+        <div className="tab-content">
+          {/* Storage row */}
+          <div className="storage-row">
+            <div>
+              <span className="storage-label">Available Storage</span>
+              <span className="storage-value">{formatBytes(availableStorage)}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={refreshStorage} disabled={isRefreshingStorage}>
+              <ArrowsClockwise size={14} weight="bold" className={isRefreshingStorage ? 'animate-spin' : ''} />
+              Refresh
             </button>
           </div>
-        </div>
 
-        {/* Models list section */}
-        <div>
-          <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+          {/* Token card */}
+          <div className="token-card">
+            <div>
+              <p className="token-card-title">Hugging Face Access Token</p>
+              <p className="token-card-desc">
+                Gated models like Gemma-IT require a read-authorized HuggingFace token.
+              </p>
+            </div>
+            <div className="input-row">
+              <input
+                type={isTokenVisible ? 'text' : 'password'}
+                className="form-input"
+                value={hfToken}
+                onChange={e => { setHfToken(e.target.value); setIsTokenSaved(false); }}
+                placeholder="hf_••••••••••••••••••••••••••••••••"
+                autoComplete="off"
+              />
+              <button
+                className="btn btn-secondary btn-icon"
+                onClick={() => { playSynthSound('click'); setIsTokenVisible(!isTokenVisible); }}
+                aria-label={isTokenVisible ? 'Hide token' : 'Show token'}
+              >
+                {isTokenVisible ? <EyeSlash size={16} weight="bold" /> : <Eye size={16} weight="bold" />}
+              </button>
+              <button className="btn btn-primary" onClick={saveToken}>
+                {isTokenSaved ? <><Check size={14} weight="bold" /> Saved</> : <><FloppyDisk size={14} weight="bold" /> Save</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Models section */}
+          <p className="section-heading" style={{ marginBottom: 'var(--sp-2)' }}>On-Device AI Models</p>
+          <div className="models-list">
             {MODELS.map(model => {
               const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
               const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
@@ -1910,680 +1662,265 @@ Answer directly and personally using the student's profile and context above. Do
               const isVerifying = state.status === 'verifying';
               const isLoading = state.status === 'loading';
               const isLoaded = state.status === 'loaded';
-
               return (
-                <div key={model.id} className="card-panel model-card">
-                  <div className="model-header">
-                    <div className="model-meta-box">
-                      <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
-                        <Cpu size={20} />
-                      </div>
-                      <div className="model-title-box">
-                        <span className="model-name">{model.name}</span>
-                        <span className="model-details">{model.architecture} • {model.displaySize}</span>
-                      </div>
+                <div key={model.id} className="model-row">
+                  <div className="model-row-header">
+                    <div className={`model-icon ${isInstalled ? 'installed' : ''}`}>
+                      <Cpu size={18} weight={isInstalled ? 'fill' : 'regular'} />
                     </div>
-
+                    <div className="model-info">
+                      <span className="model-name">{model.name}</span>
+                      <span className="model-arch">{model.architecture} · {model.displaySize}</span>
+                    </div>
                     <div>
-                      {isLoaded ? (
-                        <span className="badge badge-green">Active in RAM</span>
-                      ) : isInstalled ? (
-                        <span className="badge badge-blue">Installed Local</span>
-                      ) : null}
+                      {isLoaded && <span className="badge badge-green">In RAM</span>}
+                      {isInstalled && !isLoaded && !isLoading && <span className="badge badge-blue">Installed</span>}
+                      {model.gated && !isInstalled && <span className="badge badge-amber">Gated</span>}
                     </div>
                   </div>
 
-                  <p className="model-description">{model.description}</p>
+                  <p className="model-desc">{model.description}</p>
 
-                  {/* Progressive loading state into RAM */}
-                  {isLoading && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
-                        <span>{state.progress}%</span>
-                      </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Downloading status */}
-                  {isDownloading && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)' }}>
-                          Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
+                  {(isLoading || isDownloading) && (
+                    <div style={{ marginBottom: 'var(--sp-3)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: 'var(--sp-1)', fontWeight: 600 }}>
+                        <span>
+                          {isLoading
+                            ? 'Initializing LiteRT engine...'
+                            : `Downloading ${formatBytes(state.downloadedBytes)} / ${model.displaySize}`}
                         </span>
                         <span>{state.progress}%</span>
                       </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                      <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${state.progress}%` }} />
                       </div>
-                      <button 
-                        className="btn btn-secondary" 
-                        onClick={() => cancelDownload(model.id)}
-                        style={{ marginTop: '0.4rem', padding: '0.35rem' }}
-                      >
-                        Abort Download
-                      </button>
                     </div>
                   )}
 
-                  {/* Verifying hash integrity */}
                   {isVerifying && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
-                          Registering model & verifying SHA-256 integrity...
-                        </span>
-                      </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill indeterminate"></div>
-                      </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600, marginBottom: 'var(--sp-3)', animation: 'pulse-soft 1.5s infinite' }}>
+                      Verifying SHA-256 integrity...
                     </div>
                   )}
 
-                  {/* Action Buttons based on status */}
-                  {!isDownloading && !isVerifying && !isLoading && (
-                    <div style={{ marginTop: '0.25rem' }}>
-                      {!isInstalled ? (
-                        <button 
-                          className="btn btn-primary" 
-                          onClick={() => startDownload(model.id)}
-                          style={{ width: '100%' }}
-                        >
-                          <Download size={14} />
-                          Download Model ({model.displaySize})
-                        </button>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          {isLoaded ? (
-                            <button 
-                              className="btn btn-secondary" 
-                              onClick={() => unloadModelFromRam(model.id)}
-                              style={{ flex: 1 }}
-                            >
-                              <Pause size={14} /> Unload from RAM
-                            </button>
-                          ) : (
-                            <button 
-                              className="btn btn-primary" 
-                              onClick={() => loadModelToRam(model.id)}
-                              style={{ flex: 1 }}
-                            >
-                              <Play size={14} /> Load Model into RAM
-                            </button>
-                          )}
-                          <button 
-                            className="btn-icon-only btn-danger" 
-                            onClick={() => deleteModel(model.id)}
-                            title="Delete model binary file"
-                          >
-                            <Trash2 size={16} />
+                  <div className="model-actions">
+                    {!isInstalled && !isDownloading && !isVerifying && (
+                      <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => startDownload(model.id)}>
+                        <Download size={14} weight="bold" /> Download ({model.displaySize})
+                      </button>
+                    )}
+                    {isDownloading && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => cancelDownload(model.id)}>
+                        <X size={13} weight="bold" /> Abort
+                      </button>
+                    )}
+                    {isInstalled && !isDownloading && !isVerifying && (
+                      <>
+                        {isLoaded ? (
+                          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => unloadModelFromRam(model.id)}>
+                            <Pause size={14} weight="bold" /> Unload from RAM
                           </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        ) : !isLoading ? (
+                          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => loadModelToRam(model.id)}>
+                            <Play size={14} weight="fill" /> Load to RAM
+                          </button>
+                        ) : null}
+                        <button className="btn btn-danger btn-icon" onClick={() => deleteModel(model.id)} aria-label="Delete model">
+                          <Trash size={15} weight="bold" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
 
-        {/* Hardware Acceleration & OAuth Toggles */}
-        <div>
-          <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
-          <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
-                <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
+          {/* Hardware toggles */}
+          <p className="section-heading" style={{ marginTop: 'var(--sp-6)', marginBottom: 'var(--sp-2)' }}>Hardware Acceleration</p>
+          <div className="toggles-list">
+            {[
+              { label: 'Qualcomm Hexagon NPU', desc: 'Offloads INT4 matrix multiplications to device neural engine.', checked: npuEnabled, onChange: (v: boolean) => setNpuEnabled(v) },
+              { label: 'OpenCL GPU Delegate', desc: 'Accelerates FP16 fallback operations on Adreno GPU.', checked: gpuDelegateEnabled, onChange: (v: boolean) => setGpuDelegateEnabled(v) },
+              { label: 'Gmail / Outlook Sync', desc: 'Realtime background index of contextual emails.', checked: gmailSync, onChange: (v: boolean) => setGmailSync(v) },
+              { label: 'GitHub OAuth Portfolio Sync', desc: 'Maintains automated git integrations.', checked: githubSync, onChange: (v: boolean) => setGithubSync(v) },
+            ].map((item, idx) => (
+              <div key={idx} className="toggle-row">
+                <div className="toggle-info">
+                  <span className="toggle-title">{item.label}</span>
+                  <span className="toggle-desc">{item.desc}</span>
+                </div>
+                <label className="toggle-label">
+                  <span className="toggle-track">
+                    <input type="checkbox" checked={item.checked} onChange={e => { playSynthSound('click'); item.onChange(e.target.checked); }} />
+                    <span className="toggle-thumb" />
+                  </span>
+                </label>
               </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={npuEnabled}
-                  onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
-
+            ))}
             <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">OpenCL GPU Delegate</span>
-                <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
-              </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={gpuDelegateEnabled}
-                  onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
-
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">Gmail / Outlook Sync Integration</span>
-                <span className="toggle-desc">Realtime background index of contextual emails.</span>
-              </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={gmailSync}
-                  onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
-
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
-                <span className="toggle-desc">Maintains automated git integrations.</span>
-              </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={githubSync}
-                  onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
-
-            <div className="toggle-row" style={{ paddingBottom: 0 }}>
-              <div className="toggle-meta">
-                <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
+              <div className="toggle-info">
+                <span className="toggle-title">SQLCipher AES-256 Keystore Encryption</span>
                 <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
-                <CheckCircle size={14} /> Active
+              <div className="toggle-static-badge">
+                <CheckCircle size={15} weight="fill" /> Active
               </div>
             </div>
           </div>
         </div>
-
-      </div>
       )}
 
-
-
-      {/* Animly Web View Frame */}
+      {/* ══════════════ ACRO LEARN TAB ══════════════ */}
       {activeTab === 'animly' && (
-        <div className="iframe-container">
+        <div className="iframe-wrapper">
           {isIframeLoading && (
             <div className="iframe-loader">
-              <div className="iframe-loader-spinner"></div>
-              <span className="iframe-loader-text">Loading Acro Engine...</span>
+              <div className="iframe-spinner" />
+              <span className="iframe-loader-text">Loading Acro Learn...</span>
             </div>
           )}
-          <iframe 
-            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`} 
-            className="iframe-web" 
+          <iframe
+            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`}
+            className="iframe-main"
             title="Acro Learn Web Application"
             onLoad={() => setIsIframeLoading(false)}
           />
         </div>
       )}
 
-      {/* Footer (Only for Downloader tab) */}
-      {activeTab === 'downloader' && (
-        <footer>
-          <p>Acro AI Suite • On-Device Neural Engine • Powered by MediaPipe & React</p>
-        </footer>
-      )}
-
-      {/* Bottom Navigation Bar */}
-      <nav className="bottom-nav">
-        <button
-          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('home');
-          }}
-        >
-          <StickyNote size={20} />
-          <span>Home</span>
-        </button>
-        <button 
-          className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('downloader');
-          }}
-        >
-          <Cpu size={20} />
-          <span>AI Models</span>
-        </button>
-        <button 
-          className={`nav-item ${activeTab === 'animly' ? 'active' : ''}`}
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('animly');
-            setIsIframeLoading(true);
-          }}
-        >
-          <Tv size={20} />
-          <span>Acro Learn</span>
-        </button>
-        <button 
-          className={`nav-item ${activeTab === 'placement' ? 'active' : ''}`}
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('placement');
-          }}
-        >
-          <Briefcase size={20} />
-          <span>Placement Hub</span>
-        </button>
-        <button 
-          className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
-          onClick={() => {
-            playSynthSound('click');
-            setActiveTab('profile');
-          }}
-        >
-          <User size={20} />
-          <span>Profile</span>
-        </button>
-      </nav>
-
-      <button 
-        className={`chatbot-fab ${isChatOpen ? 'chat-open' : ''}`}
-        onClick={() => {
-          playSynthSound('click');
-          setIsChatOpen(prev => !prev);
-          setIsDropdownOpen(false);
-        }}
-        aria-label="Toggle Local AI Chatbot"
-      >
-        {isChatOpen ? <X size={24} /> : <MessageSquare size={24} />}
-      </button>
-
-      {/* Floating Chatbot Window */}
-      {isChatOpen && (
-        <div className="chatbot-window">
-          {/* Chat Header */}
-          <div className="chat-header">
-            <div className="model-selector-container">
-              <button 
-                className="model-selector-btn"
-                onClick={() => setIsDropdownOpen(prev => !prev)}
-              >
-                <Bot size={16} />
-                <span>{MODELS.find(m => m.id === chatModelId)?.name || 'Select Model'}</span>
-                {isDropdownOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-
-              {/* Model Dropdown Menu */}
-              {isDropdownOpen && (
-                <div className="model-dropdown">
-                  {MODELS.map(m => {
-                    const isInstalled = modelStates[m.id]?.status === 'installed' || modelStates[m.id]?.status === 'loaded';
-                    return (
-                      <button
-                        key={m.id}
-                        className={`model-dropdown-item ${chatModelId === m.id ? 'selected' : ''}`}
-                        onClick={() => {
-                          playSynthSound('click');
-                          setChatModelId(m.id);
-                          setIsDropdownOpen(false);
-                          // Reset welcome message on model switch
-                          setChatMessages([
-                            {
-                              id: 'welcome',
-                              sender: 'model',
-                              text: `Hello! I am your local ${m.name} assistant. ${isInstalled ? 'I am fully downloaded and ready for offline inference.' : 'Note: I am not downloaded yet. Please download me via the AI Downloader tab.'}`,
-                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            }
-                          ]);
-                        }}
-                      >
-                        {chatModelId === m.id && <Check size={14} className="model-item-check" />}
-                        <div className="model-item-info" style={{ marginLeft: chatModelId === m.id ? '0' : '1.25rem' }}>
-                          <span className="model-item-name">{m.name}</span>
-                          <span className="model-item-desc">{m.displaySize} • {m.id === 'whisper-tiny' ? 'Speech Encoder' : 'Instruct LLM'}</span>
-                        </div>
-                        <span className={`model-item-badge ${isInstalled ? 'installed' : 'missing'}`}>
-                          {isInstalled ? 'Installed' : 'Missing'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  <div className="dropdown-divider"></div>
-                  <button 
-                    className="extended-thinking-item"
-                    onClick={() => {
-                      playSynthSound('click');
-                      setExtendedThinking(prev => !prev);
-                      setIsDropdownOpen(false);
-                    }}
-                  >
-                    <span style={{ fontSize: '0.85rem' }}>🧠 Extended Thinking (CoT)</span>
-                    <span style={{ color: extendedThinking ? '#818cf8' : '#64748b' }}>
-                      {extendedThinking ? 'Active' : 'Off'}
-                    </span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <button 
-              className="chat-close-btn"
-              onClick={() => {
-                playSynthSound('click');
-                setIsChatOpen(false);
-              }}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Chat Messages */}
-          <div className="chat-messages">
-            {chatMessages.map(msg => (
-              <div key={msg.id} className={`chat-message-row ${msg.sender}`}>
-                <div className="chat-bubble">
-                  {msg.text.split('\n').map((line, idx) => {
-                    if (line.startsWith('> ')) {
-                      return <div key={idx} style={{ color: '#94a3b8', fontStyle: 'italic', paddingLeft: '0.5rem', borderLeft: '2px solid rgba(255,255,255,0.2)', margin: '0.2rem 0' }}>{line.slice(2)}</div>;
-                    }
-                    if (line.startsWith('```python') || line.startsWith('```')) {
-                      return null; // Handle basic styling below
-                    }
-                    return <div key={idx}>{line}</div>;
-                  })}
-                  
-                  {/* Basic Code block simulator inside chats */}
-                  {msg.text.includes('```python') && (
-                    <pre>
-                      <code>
-                        {msg.text.split('```python')[1]?.split('```')[0]?.trim()}
-                      </code>
-                    </pre>
-                  )}
-
-                  <div className="chat-message-meta">
-                    <span>{msg.timestamp}</span>
-                    {msg.stats && (
-                      <span className="inference-badge">
-                        {msg.stats.speed} • {msg.stats.hardware}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {/* Typing indicator */}
-            {isTyping && (
-              <div className="chat-message-row model">
-                <div className="chat-typing-indicator">
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Warning Banner if selected model is not downloaded */}
-          {(() => {
-            const isInstalled = modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded';
-            if (!isInstalled) {
-              return (
-                <div className="chat-warning-banner">
-                  <span>⚠️ Download this model to enable on-device AI inference (no internet needed).</span>
-                  <button 
-                    className="chat-warning-link"
-                    onClick={() => {
-                      playSynthSound('click');
-                      setActiveTab('downloader');
-                      setIsChatOpen(false);
-                    }}
-                  >
-                    Go to AI Downloader →
-                  </button>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
-          {/* Chat Input Bar */}
-          <div className="chat-input-container">
-            <button 
-              className="chat-mic-btn"
-              onClick={() => {
-                playSynthSound('click');
-                triggerAlert('Voice input requires Whisper Tiny activation.', 'info');
-              }}
-              title="Voice Input"
-            >
-              <Mic size={18} />
-            </button>
-            <input 
-              type="text" 
-              className="chat-text-input"
-              placeholder={modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded' ? "Ask anything (on-device)..." : "Download model first..."}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSendMessage();
-                }
-              }}
-              disabled={!(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
-            />
-            <button 
-              className="chat-send-btn"
-              onClick={handleSendMessage}
-              disabled={!chatInput.trim() || isTyping || !(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
-              aria-label="Send Message"
-            >
-              <Send size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      {/* Placement Hub Section Tab */}
+      {/* ══════════════ PLACEMENT HUB TAB ══════════════ */}
       {activeTab === 'placement' && (
-        <div className="placement-page-container">
-          <div className="profile-page-header">
-            <button 
-              className="btn btn-secondary back-nav-btn" 
-              onClick={() => {
-                playSynthSound('click');
-                setActiveTab('downloader');
-              }}
-            >
-              <ArrowLeft size={16} /> Back to Dashboard
-            </button>
-            <div className="profile-page-title">
-              <Briefcase size={22} className="profile-icon-heading" />
-              <h2>Placement Hub & Resume Analytics</h2>
+        <div className="placement-container">
+          <div className="page-header">
+            <div className="page-header-icon">
+              <Briefcase size={20} weight="fill" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>Placement Hub</h2>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Resume analytics powered by local AI</p>
             </div>
           </div>
 
           {!studentProfile.resumeData ? (
-            <div className="placement-error-card">
-              <AlertTriangle size={48} className="error-card-icon" />
+            <div className="placement-empty">
+              <div className="placement-empty-icon">
+                <Warning size={24} weight="fill" />
+              </div>
               <h3>Resume Not Uploaded</h3>
-              <p>You must upload your resume in PDF format in your profile before you can use the Placement Hub analytics and ATS checker features.</p>
-              <button 
-                className="btn btn-primary"
-                onClick={() => {
-                  playSynthSound('click');
-                  setActiveTab('profile');
-                }}
-              >
-                Go to Profile & Upload Resume
+              <p>Upload your resume in PDF format in the Profile tab before using Placement Hub features.</p>
+              <button className="btn btn-primary" onClick={() => { playSynthSound('click'); setActiveTab('profile'); }}>
+                Go to Profile
               </button>
             </div>
           ) : (
-            <div className="placement-grid">
-              {/* Left Column: Sub-feature 1 - Company Info & Job Match */}
-              <div className="placement-card">
-                <div className="card-header-icon">
-                  <Search size={24} className="card-icon" />
-                  <h3>Company Info & Job Matching</h3>
+            <div className="placement-grid-2col">
+              {/* Job Match Panel */}
+              <div className="placement-panel">
+                <div className="placement-panel-header">
+                  <div className="placement-panel-icon">
+                    <MagnifyingGlass size={18} weight="bold" />
+                  </div>
+                  <span className="placement-panel-title">Job Match Analysis</span>
                 </div>
-                <p className="card-description">
-                  Uses AI search tools to lookup role requirements at a specific company and analyze how your skills and local resume content align.
+                <p className="placement-panel-desc">
+                  Searches for role requirements and analyzes how your resume and skills align with the target position.
                 </p>
-
                 <div className="placement-form">
                   <div className="form-group">
-                    <label>Target Company</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Google, Stripe, Microsoft" 
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                    />
+                    <label className="form-label">Target Company</label>
+                    <input type="text" className="form-input" placeholder="Google, Stripe, Microsoft..." value={companyName} onChange={e => setCompanyName(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Job Role</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Frontend Engineer, ML Engineer" 
-                      value={jobRole}
-                      onChange={(e) => setJobRole(e.target.value)}
-                    />
+                    <label className="form-label">Job Role</label>
+                    <input type="text" className="form-input" placeholder="Frontend Engineer, ML Engineer..." value={jobRole} onChange={e => setJobRole(e.target.value)} />
                   </div>
-                  <button 
-                    className="btn btn-primary analyze-btn"
-                    onClick={handleAnalyzeJobMatch}
-                    disabled={isAnalyzingMatch}
-                  >
-                    {isAnalyzingMatch ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" /> Analyzing Match...
-                      </>
-                    ) : (
-                      <>
-                        <Briefcase size={14} /> Analyze Alignment
-                      </>
-                    )}
+                  <button className="btn btn-primary" onClick={handleAnalyzeJobMatch} disabled={isAnalyzingMatch}>
+                    {isAnalyzingMatch
+                      ? <><ArrowsClockwise size={14} weight="bold" className="animate-spin" /> Analyzing...</>
+                      : <><Briefcase size={14} weight="bold" /> Analyze Match</>}
                   </button>
                 </div>
+
                 {companyInfoSearch && (
-                  <div className="search-results-section">
-                    <h4>Web Search Insights Retrieved:</h4>
-                    <div className="search-results-box" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                      {companyInfoSearch.split('\n').map((line, idx) => {
-                        const trimmedLine = line.trim();
-                        if (trimmedLine.startsWith('###')) {
-                          return <h5 key={idx} style={{ marginTop: '0.5rem', color: '#1e1b4b', fontWeight: 'bold' }}>{renderFormattedText(trimmedLine.replace('###', '').trim())}</h5>;
-                        }
-                        if (trimmedLine.startsWith('##')) {
-                          return <h4 key={idx} style={{ marginTop: '0.75rem', color: '#1e1b4b', fontWeight: 'bold' }}>{renderFormattedText(trimmedLine.replace('##', '').trim())}</h4>;
-                        }
-                        if (trimmedLine.startsWith('*') || trimmedLine.startsWith('-')) {
-                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.8rem', listStyleType: 'disc', margin: '0.25rem 0' }}>{renderFormattedText(trimmedLine.substring(1).trim())}</li>;
-                        }
-                        return <p key={idx} style={{ fontSize: '0.8rem', lineHeight: '1.4', margin: '0.25rem 0' }}>{renderFormattedText(trimmedLine)}</p>;
-                      })}
+                  <div style={{ marginTop: 'var(--sp-4)' }}>
+                    <p className="section-heading">Web Search Insights</p>
+                    <div className="ai-result" style={{ maxHeight: '180px', overflowY: 'auto', fontSize: '0.8rem' }}>
+                      {renderMarkdown(companyInfoSearch)}
                     </div>
                   </div>
                 )}
+
                 {companyMatchResult && (
-                  <div className="match-analysis-section">
-                    <div className="score-badge-wrapper">
-                      <h4>Match Analysis:</h4>
+                  <div style={{ marginTop: 'var(--sp-4)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)', marginBottom: 'var(--sp-3)' }}>
+                      <p className="section-heading" style={{ margin: 0 }}>Match Analysis</p>
                       {matchScore !== null && (
-                        <div className={`score-badge ${matchScore >= 80 ? 'high' : matchScore >= 60 ? 'medium' : 'low'}`}>
-                          {matchScore}% Match
-                        </div>
+                        <span className={`score-num ${matchScore >= 80 ? 'high' : matchScore >= 60 ? 'medium' : 'low'}`}>
+                          {matchScore}%
+                        </span>
                       )}
                     </div>
-                    <div className="analysis-result-markdown">
-                      {companyMatchResult.split('\n').map((line, idx) => {
-                        if (line.startsWith('###')) {
-                          return <h4 key={idx} style={{ marginTop: '1rem', color: '#1e1b4b' }}>{renderFormattedText(line.replace('###', ''))}</h4>;
-                        }
-                        if (line.startsWith('-')) {
-                          return <li key={idx} style={{ marginLeft: '1rem', fontSize: '0.85rem' }}>{renderFormattedText(line.replace('-', ''))}</li>;
-                        }
-                        return <p key={idx} style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: '0.5rem 0' }}>{renderFormattedText(line)}</p>;
-                      })}
+                    <div className="ai-result">
+                      {renderMarkdown(companyMatchResult)}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Right Column: Sub-feature 2 - ATS Score & Keywords */}
-              <div className="placement-card">
-                <div className="card-header-icon">
-                  <Award size={24} className="card-icon" />
-                  <h3>ATS Resume Scanner</h3>
+              {/* ATS Panel */}
+              <div className="placement-panel">
+                <div className="placement-panel-header">
+                  <div className="placement-panel-icon">
+                    <Trophy size={18} weight="bold" />
+                  </div>
+                  <span className="placement-panel-title">ATS Resume Scanner</span>
                 </div>
-                <p className="card-description">
-                  Scans your resume locally using the text extractor and grades it based on standard Applicant Tracking System (ATS) parameters.
+                <p className="placement-panel-desc">
+                  Grades your resume locally against standard Applicant Tracking System parameters and provides actionable feedback.
                 </p>
-
-                <div className="ats-trigger-section">
-                  <button 
-                    className="btn btn-secondary analyze-btn"
-                    onClick={handleAnalyzeATS}
-                    disabled={isAnalyzingAts}
-                  >
-                    {isAnalyzingAts ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" /> Scanning Resume...
-                      </>
-                    ) : (
-                      <>
-                        <TrendingUp size={14} /> Scan ATS Score
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button className="btn btn-secondary" onClick={handleAnalyzeATS} disabled={isAnalyzingAts}>
+                  {isAnalyzingAts
+                    ? <><ArrowsClockwise size={14} weight="bold" className="animate-spin" /> Scanning...</>
+                    : <><TrendUp size={14} weight="bold" /> Scan ATS Score</>}
+                </button>
 
                 {atsResult && (
-                  <div className="ats-results-wrapper">
-                    <div className="ats-score-display">
-                      <div className="progress-circle-placeholder">
-                        <span className="ats-score-num">{atsResult.score}</span>
-                        <span className="ats-score-lbl">ATS SCORE</span>
+                  <div style={{ marginTop: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                    <div className="score-row">
+                      <div>
+                        <span className={`score-num ${atsResult.score >= 80 ? 'high' : atsResult.score >= 60 ? 'medium' : 'low'}`}>
+                          {atsResult.score}
+                        </span>
+                        <span className="score-label">ATS Score</span>
                       </div>
-                      <div className="ats-grade-text">
-                        <p className="ats-feedback-desc">{renderFormattedText(atsResult.feedback)}</p>
-                      </div>
+                      <p style={{ flex: 1, fontSize: '0.8125rem', color: 'var(--text-2)', lineHeight: '1.5' }}>
+                        {atsResult.feedback}
+                      </p>
                     </div>
 
-                    <div className="ats-suggestions">
-                      <h4>Smart Suggestions:</h4>
-                      <ul>
+                    <div>
+                      <p className="section-heading">Smart Suggestions</p>
+                      <ul style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)', paddingLeft: 'var(--sp-4)' }}>
                         {atsResult.suggestions.map((sug, idx) => (
-                          <li key={idx}>{renderFormattedText(sug)}</li>
+                          <li key={idx} style={{ fontSize: '0.8125rem', color: 'var(--text-2)', lineHeight: '1.5' }}>{sug}</li>
                         ))}
                       </ul>
                     </div>
-                    <div className="ats-keywords-grid">
-                      <div className="keyword-col">
-                        <h4 className="kw-title found">Keywords Found</h4>
-                        <div className="kw-tags">
-                          {atsResult.keywordsFound.map((kw, idx) => (
-                            <span key={idx} className="kw-tag found">{kw}</span>
-                          ))}
-                          {atsResult.keywordsFound.length === 0 && <span className="no-kws">None identified.</span>}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+                      <div>
+                        <p className="section-heading" style={{ color: 'var(--success)' }}>Found</p>
+                        <div className="keyword-tags">
+                          {atsResult.keywordsFound.map((kw, i) => <span key={i} className="kw-tag found">{kw}</span>)}
+                          {atsResult.keywordsFound.length === 0 && <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>None identified.</span>}
                         </div>
                       </div>
-                      <div className="keyword-col">
-                        <h4 className="kw-title missing">Recommended / Missing</h4>
-                        <div className="kw-tags">
-                          {atsResult.keywordsMissing.map((kw, idx) => (
-                            <span key={idx} className="kw-tag missing">{kw}</span>
-                          ))}
-                          {atsResult.keywordsMissing.length === 0 && <span className="no-kws">None identified.</span>}
+                      <div>
+                        <p className="section-heading" style={{ color: 'var(--error)' }}>Missing</p>
+                        <div className="keyword-tags">
+                          {atsResult.keywordsMissing.map((kw, i) => <span key={i} className="kw-tag missing">{kw}</span>)}
+                          {atsResult.keywordsMissing.length === 0 && <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>None identified.</span>}
                         </div>
                       </div>
                     </div>
@@ -2595,207 +1932,132 @@ Answer directly and personally using the student's profile and context above. Do
         </div>
       )}
 
-      {/* Student Profile Section Tab */}
+      {/* ══════════════ PROFILE TAB ══════════════ */}
       {activeTab === 'profile' && (
-        <div className="profile-page-container">
-          <div className="profile-page-header">
-            <button 
-              className="btn btn-secondary back-nav-btn" 
-              onClick={() => {
-                playSynthSound('click');
-                setActiveTab('downloader');
-              }}
-            >
-              <ArrowLeft size={16} /> Back to Dashboard
-            </button>
-            <div className="profile-page-title">
-              <User size={22} className="profile-icon-heading" />
-              <h2>Student Profile & Saved Resume</h2>
+        <div className="profile-container">
+          <div className="page-header">
+            <div className="page-header-icon">
+              <User size={20} weight="fill" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>Profile</h2>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Stored locally on device</p>
             </div>
           </div>
 
-          {/* Profile Card Banner */}
-          <div className="profile-card-banner">
-            <div className="profile-avatar-container">
-              {studentProfile.avatarPhoto ? (
-                <img src={studentProfile.avatarPhoto} alt="Profile Avatar" className="profile-avatar-img" />
-              ) : (
-                <div className="profile-avatar">
-                  {studentProfile.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-                </div>
-              )}
-              <label className="avatar-edit-badge" title="Change Profile Photo">
-                <Upload size={12} />
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleAvatarUpload}
-                  style={{ display: 'none' }}
-                />
+          {/* Profile banner */}
+          <div className="profile-banner">
+            <div className="avatar-wrap">
+              <div className="avatar">
+                {studentProfile.avatarPhoto
+                  ? <img src={studentProfile.avatarPhoto} alt="Profile" />
+                  : userInitials}
+              </div>
+              <label className="avatar-edit" title="Change photo">
+                <Upload size={10} weight="bold" />
+                <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
               </label>
             </div>
-            <div className="profile-card-details">
+            <div className="profile-banner-info">
               <h3>{studentProfile.name}</h3>
-              <span className="profile-id">{studentProfile.studentId}</span>
-              <span className="profile-course">{studentProfile.course}</span>
+              <p className="student-id">{studentProfile.studentId}</p>
+              <p className="student-course">{studentProfile.course}</p>
             </div>
           </div>
 
-          {/* Edit Profile Form */}
+          {/* Personal details */}
           <div className="profile-section">
-            <h3 className="profile-section-title">Personal Details (Stored Locally)</h3>
-            
-            <div className="form-group-row">
-              <div className="form-group">
-                <label>Full Name</label>
-                <input 
-                  type="text" 
-                  value={studentProfile.name}
-                  onChange={(e) => setStudentProfile({ ...studentProfile, name: e.target.value })}
-                  placeholder="Student Full Name"
-                />
+            <h3 className="profile-section-title">Personal Details</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-label">Full Name</label>
+                  <input type="text" className="form-input" value={studentProfile.name}
+                    onChange={e => setStudentProfile({ ...studentProfile, name: e.target.value })} placeholder="Student Full Name" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Student ID</label>
+                  <input type="text" className="form-input" value={studentProfile.studentId}
+                    onChange={e => setStudentProfile({ ...studentProfile, studentId: e.target.value })} placeholder="ACRO-2026-1024" />
+                </div>
               </div>
               <div className="form-group">
-                <label>Student ID</label>
-                <input 
-                  type="text" 
-                  value={studentProfile.studentId}
-                  onChange={(e) => setStudentProfile({ ...studentProfile, studentId: e.target.value })}
-                  placeholder="e.g. ACRO-2026-1024"
-                />
+                <label className="form-label">Email Address</label>
+                <input type="email" className="form-input" value={studentProfile.email}
+                  onChange={e => setStudentProfile({ ...studentProfile, email: e.target.value })} placeholder="student@university.edu" />
               </div>
+              <div className="form-group">
+                <label className="form-label">Course / Major</label>
+                <input type="text" className="form-input" value={studentProfile.course}
+                  onChange={e => setStudentProfile({ ...studentProfile, course: e.target.value })} placeholder="Computer Science, Electronics..." />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Technical Skills <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>(comma-separated)</span></label>
+                <input type="text" className="form-input" value={studentProfile.skills}
+                  onChange={e => setStudentProfile({ ...studentProfile, skills: e.target.value })} placeholder="Python, Java, Android, Machine Learning" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Bio / Summary</label>
+                <textarea rows={2} className="form-textarea" value={studentProfile.bio}
+                  onChange={e => setStudentProfile({ ...studentProfile, bio: e.target.value })} placeholder="Brief academic profile..." />
+              </div>
+              <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }}
+                onClick={() => { playSynthSound('success'); saveStudentProfile(studentProfile); }}>
+                <FloppyDisk size={15} weight="bold" /> Save Profile
+              </button>
             </div>
-
-            <div className="form-group">
-              <label>Email Address</label>
-              <input 
-                type="email" 
-                value={studentProfile.email}
-                onChange={(e) => setStudentProfile({ ...studentProfile, email: e.target.value })}
-                placeholder="student@university.edu"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Course / Major</label>
-              <input 
-                type="text" 
-                value={studentProfile.course}
-                onChange={(e) => setStudentProfile({ ...studentProfile, course: e.target.value })}
-                placeholder="Computer Science, Electronics..."
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Technical Skills</label>
-              <input 
-                type="text" 
-                value={studentProfile.skills}
-                onChange={(e) => setStudentProfile({ ...studentProfile, skills: e.target.value })}
-                placeholder="Python, Java, Android, Machine Learning"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Bio / Summary</label>
-              <textarea 
-                rows={2}
-                value={studentProfile.bio}
-                onChange={(e) => setStudentProfile({ ...studentProfile, bio: e.target.value })}
-                placeholder="Brief academic profile..."
-              />
-            </div>
-
-            <button 
-              className="btn btn-primary save-profile-btn"
-              onClick={() => {
-                playSynthSound('success');
-                saveStudentProfile(studentProfile);
-              }}
-            >
-              <Save size={16} /> Save Profile Details
-            </button>
           </div>
 
-          {/* Resume Section */}
-          <div className="profile-section resume-section">
-            <h3 className="profile-section-title">Student Resume Document</h3>
-            
+          {/* Resume */}
+          <div className="profile-section">
+            <h3 className="profile-section-title">Resume Document</h3>
             {studentProfile.resumeData ? (
-              <div className="resume-preview-card">
-                <div className="resume-info">
-                  <FileText size={32} className="resume-icon" />
-                  <div className="resume-meta">
-                    <span className="resume-filename">{studentProfile.resumeName || 'Uploaded_Resume.pdf'}</span>
-                    <span className="resume-status-badge">100% Stored Locally on Device</span>
-                  </div>
-                </div>
-
-                {/* Inline Resume Document Viewer */}
-                <div className="resume-inline-viewer">
-                  <div className="resume-viewer-header">
-                    <span>Document Live Preview</span>
-                    <button 
-                      className="btn btn-secondary resume-external-link"
-                      onClick={() => {
-                        playSynthSound('click');
-                        setIsFullscreenResumeOpen(true);
-                      }}
-                    >
-                      <ExternalLink size={12} /> Open Fullscreen
-                    </button>
-                  </div>
-                  {studentProfile.resumeType.startsWith('image/') ? (
-                    <img src={resumeBlobUrl || studentProfile.resumeData} alt="Resume Preview" className="resume-image-preview" />
-                  ) : (
-                    <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
-                  )}
-                </div>
-
-                <div className="resume-actions">
-                  <button 
-                    className="btn btn-primary resume-action-btn"
-                    onClick={handleDownloadResume}
-                  >
-                    <Download size={14} /> Download Resume File
+              <div className="resume-panel">
+                <div className="resume-panel-header">
+                  <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)' }}>Document Preview</p>
+                  <button className="btn btn-secondary btn-sm"
+                    onClick={() => { playSynthSound('click'); setIsFullscreenResumeOpen(true); }}>
+                    <ArrowSquareOut size={13} weight="bold" /> Fullscreen
                   </button>
-
-                  <label className="btn btn-secondary resume-action-btn upload-replace-label">
-                    <Upload size={14} /> Upload / Replace Resume
-                    <input 
-                      type="file" 
-                      accept=".pdf,.doc,.docx,.txt,image/*" 
-                      onChange={handleResumeUpload}
-                      style={{ display: 'none' }}
-                    />
+                </div>
+                <div className="resume-file-info">
+                  <div className="resume-file-icon"><FileText size={20} weight="fill" /></div>
+                  <div>
+                    <p className="resume-file-name">{studentProfile.resumeName || 'Uploaded_Resume.pdf'}</p>
+                    <p className="resume-file-meta">100% stored locally on device</p>
+                  </div>
+                </div>
+                <div className="resume-preview-area">
+                  {studentProfile.resumeType.startsWith('image/')
+                    ? <img src={resumeBlobUrl || studentProfile.resumeData} alt="Resume" className="resume-image-preview" style={{ maxWidth: '100%', borderRadius: 'var(--r-sm)' }} />
+                    : <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
+                  }
+                </div>
+                <div className="resume-actions-row">
+                  <button className="btn btn-primary btn-sm" onClick={handleDownloadResume}>
+                    <Download size={13} weight="bold" /> Download
+                  </button>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                    <Upload size={13} weight="bold" /> Replace
+                    <input type="file" accept=".pdf,.doc,.docx,.txt,image/*" onChange={handleResumeUpload} style={{ display: 'none' }} />
                   </label>
-
-                  <button 
-                    className="btn btn-secondary resume-action-btn delete-resume-btn"
-                    onClick={() => {
-                      playSynthSound('delete');
-                      const updated = { ...studentProfile, resumeName: '', resumeType: '', resumeData: '' };
-                      saveStudentProfile(updated);
-                      triggerAlert('Resume removed.', 'info');
-                    }}
-                  >
-                    <Trash2 size={14} /> Remove
+                  <button className="btn btn-danger btn-sm" onClick={() => {
+                    playSynthSound('delete');
+                    saveStudentProfile({ ...studentProfile, resumeName: '', resumeType: '', resumeData: '' });
+                    triggerAlert('Resume removed.', 'info');
+                  }}>
+                    <Trash size={13} weight="bold" /> Remove
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="resume-upload-dropzone">
-                <Paperclip size={36} className="dropzone-icon" />
-                <p className="dropzone-title">Upload Existing Resume</p>
-                <p className="dropzone-desc">Select your resume file (PDF, DOCX, TXT, or Image)</p>
-                <label className="btn btn-primary upload-resume-btn">
-                  <Upload size={16} /> Select Resume File
-                  <input 
-                    type="file" 
-                    accept=".pdf,.doc,.docx,.txt,image/*" 
-                    onChange={handleResumeUpload}
-                    style={{ display: 'none' }}
-                  />
+              <div className="resume-dropzone">
+                <div className="dropzone-icon"><Paperclip size={24} weight="bold" /></div>
+                <p className="dropzone-title">Upload Your Resume</p>
+                <p className="dropzone-desc">PDF, DOCX, TXT, or image — stored privately on device</p>
+                <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
+                  <Upload size={14} weight="bold" /> Select Resume File
+                  <input type="file" accept=".pdf,.doc,.docx,.txt,image/*" onChange={handleResumeUpload} style={{ display: 'none' }} />
                 </label>
               </div>
             )}
@@ -2803,172 +2065,362 @@ Answer directly and personally using the student's profile and context above. Do
         </div>
       )}
 
-      {/* Fullscreen Resume Modal Viewer */}
-      {isFullscreenResumeOpen && (
-        <div className="fullscreen-resume-overlay" onClick={() => setIsFullscreenResumeOpen(false)}>
-          <div className="fullscreen-resume-container" onClick={(e) => e.stopPropagation()}>
-            <div className="fullscreen-resume-header">
-              <div className="fullscreen-title">
-                <FileText size={20} />
-                <span>{studentProfile.resumeName || 'Student_Resume.pdf'}</span>
+      {/* ══════════════ BOTTOM NAV ══════════════ */}
+      <nav className="bottom-nav" role="navigation" aria-label="Main navigation">
+        {[
+          { id: 'home', icon: House, label: 'Home' },
+          { id: 'downloader', icon: Cpu, label: 'AI Models' },
+          { id: 'animly', icon: TelevisionSimple, label: 'Learn' },
+          { id: 'placement', icon: Briefcase, label: 'Placement' },
+          { id: 'profile', icon: User, label: 'Profile' },
+        ].map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            className={`nav-item ${activeTab === id ? 'active' : ''}`}
+            onClick={() => {
+              playSynthSound('click');
+              setActiveTab(id as any);
+              if (id === 'animly') setIsIframeLoading(true);
+            }}
+            aria-label={label}
+            aria-current={activeTab === id ? 'page' : undefined}
+          >
+            <Icon size={22} weight={activeTab === id ? 'fill' : 'regular'} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* ══════════════ CHATBOT ══════════════ */}
+      {/* FAB */}
+      <button
+        className={`chat-fab ${isChatOpen ? 'open' : ''} ${activeTab === 'home' ? 'shifted' : ''}`}
+        onClick={() => { playSynthSound('click'); setIsChatOpen(prev => !prev); setIsDropdownOpen(false); }}
+        aria-label={isChatOpen ? 'Close AI chat' : 'Open AI chat'}
+      >
+        {isChatOpen ? <X size={22} weight="bold" /> : <ChatCircle size={22} weight="fill" />}
+      </button>
+
+      {/* Chat Window */}
+      {isChatOpen && (
+        <div className="chat-window" role="dialog" aria-label="AI Chat" aria-modal="false">
+          {/* Chat header */}
+          <div className="chat-header" style={{ position: 'relative' }}>
+            <div className="chat-header-brand">
+              <div className="chat-avatar">
+                <Robot size={16} weight="fill" />
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button 
-                  className="btn btn-primary"
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
-                  onClick={handleDownloadResume}
+              <div className="chat-header-info">
+                <div className="chat-header-name">Acro AI</div>
+                <div className="chat-header-status">
+                  {isChatModelInstalled ? `${MODELS.find(m => m.id === chatModelId)?.name} · On-device` : 'No model loaded'}
+                </div>
+              </div>
+              {/* Model selector pill */}
+              <button
+                className="model-selector-btn"
+                onClick={() => setIsDropdownOpen(prev => !prev)}
+                aria-expanded={isDropdownOpen}
+              >
+                <Brain size={11} weight="fill" />
+                <span className="model-selector-text">
+                  {MODELS.find(m => m.id === chatModelId)?.name.split(' ').slice(0, 2).join(' ') || 'Select'}
+                </span>
+                {isDropdownOpen ? <CaretUp size={10} weight="bold" /> : <CaretDown size={10} weight="bold" />}
+              </button>
+            </div>
+            <button
+              className="icon-btn btn-sm"
+              onClick={() => { playSynthSound('click'); setIsChatOpen(false); }}
+              aria-label="Close chat"
+            >
+              <X size={16} weight="bold" />
+            </button>
+
+            {/* Dropdown */}
+            {isDropdownOpen && (
+              <div className="model-dropdown">
+                {MODELS.map(m => {
+                  const isModelInstalled = modelStates[m.id]?.status === 'installed' || modelStates[m.id]?.status === 'loaded';
+                  return (
+                    <button
+                      key={m.id}
+                      className={`model-dropdown-item ${chatModelId === m.id ? 'selected' : ''}`}
+                      onClick={() => {
+                        playSynthSound('click');
+                        setChatModelId(m.id);
+                        setIsDropdownOpen(false);
+                        setChatMessages([{
+                          id: 'welcome',
+                          sender: 'model',
+                          text: `Hello! I am your **${m.name}** assistant.\n\n${isModelInstalled ? 'Ready for offline inference. Your notes and resume are available as context.' : 'This model is not downloaded yet. Please download it from the **AI Models** tab.'}`,
+                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        }]);
+                      }}
+                    >
+                      <div className="model-check-icon">
+                        {chatModelId === m.id && <Check size={14} weight="bold" />}
+                      </div>
+                      <div className="model-dropdown-item-info">
+                        <span className="model-dropdown-item-name">{m.name}</span>
+                        <span className="model-dropdown-item-meta">{m.displaySize} · {m.id === 'whisper-tiny' ? 'Speech' : 'Instruct LLM'}</span>
+                      </div>
+                      <span className={`badge ${isModelInstalled ? 'badge-green' : 'badge-neutral'}`}>
+                        {isModelInstalled ? 'Ready' : 'Not installed'}
+                      </span>
+                    </button>
+                  );
+                })}
+                <div className="dropdown-divider" />
+                <button
+                  className="thinking-toggle"
+                  onClick={() => { playSynthSound('click'); setExtendedThinking(prev => !prev); setIsDropdownOpen(false); }}
                 >
-                  <Download size={14} /> Download
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: '0.875rem' }}>
+                    <Brain size={15} weight="fill" style={{ color: 'var(--text-2)' }} />
+                    Extended Thinking (CoT)
+                  </span>
+                  <span className={`thinking-status ${extendedThinking ? 'on' : 'off'}`}>
+                    {extendedThinking ? 'On' : 'Off'}
+                  </span>
                 </button>
-                <button 
-                  className="modal-close-btn"
-                  onClick={() => setIsFullscreenResumeOpen(false)}
-                >
-                  <X size={20} />
-                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Messages */}
+          <div className="chat-messages" ref={chatMessagesRef}>
+            {chatMessages.map(msg => (
+              <div key={msg.id} className={`msg-row ${msg.sender}`}>
+                {msg.sender === 'model' && (
+                  <div className="msg-avatar model-av">
+                    <Robot size={13} weight="fill" />
+                  </div>
+                )}
+                <div>
+                  <div className="msg-bubble">
+                    {msg.sender === 'model'
+                      ? renderMarkdown(msg.text)
+                      : msg.text
+                    }
+                  </div>
+                  <div className="msg-meta">
+                    <span className="msg-time">{msg.timestamp}</span>
+                    {msg.stats && (
+                      <span className="inference-tag">
+                        {msg.stats.hardware}{msg.stats.speed ? ` · ${msg.stats.speed}` : ''} · {msg.stats.time}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {msg.sender === 'user' && (
+                  <div className="msg-avatar user-av">
+                    {userInitials.charAt(0)}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isTyping && (
+              <div className="msg-row model">
+                <div className="msg-avatar model-av">
+                  <Robot size={13} weight="fill" />
+                </div>
+                <div className="typing-indicator">
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Not installed warning */}
+          {!isChatModelInstalled && (
+            <div className="chat-notice">
+              <Warning size={15} weight="fill" style={{ flexShrink: 0 }} />
+              <span className="chat-notice-text">Model not downloaded. Enable offline inference.</span>
+              <button
+                className="chat-notice-link"
+                onClick={() => { playSynthSound('click'); setActiveTab('downloader'); setIsChatOpen(false); }}
+              >
+                Get Models
+              </button>
+            </div>
+          )}
+
+          {/* Input area */}
+          <div className="chat-input-area">
+            <button
+              className="chat-mic-btn"
+              onClick={() => { playSynthSound('click'); triggerAlert('Voice input requires Whisper Tiny model.', 'info'); }}
+              aria-label="Voice input"
+            >
+              <Microphone size={16} weight="regular" />
+            </button>
+            <input
+              type="text"
+              className="chat-text-input"
+              placeholder={isChatModelInstalled ? 'Ask anything (offline)...' : 'Download model to chat...'}
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+              disabled={!isChatModelInstalled}
+              aria-label="Chat message input"
+            />
+            <button
+              className="chat-send-btn"
+              onClick={handleSendMessage}
+              disabled={!chatInput.trim() || isTyping || !isChatModelInstalled}
+              aria-label="Send message"
+            >
+              <PaperPlaneTilt size={15} weight="fill" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ MODALS ══════════════ */}
+
+      {/* Add Note Modal */}
+      {isAddNoteOpen && (
+        <div className="modal-overlay" onClick={() => setIsAddNoteOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-note-title">
+            <div className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-title-group">
+                <div className="modal-icon-wrap"><Note size={18} weight="fill" /></div>
+                <div>
+                  <h3 id="add-note-title" className="modal-title">New Note</h3>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setIsAddNoteOpen(false)} aria-label="Close">
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label" htmlFor="note-title">Title</label>
+                <input id="note-title" type="text" className="form-input" placeholder="Note title..." value={newNoteTitle}
+                  onChange={e => setNewNoteTitle(e.target.value)} autoFocus />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="note-content">Content</label>
+                <textarea id="note-content" rows={5} className="form-textarea" placeholder="Write your note here..." value={newNoteContent}
+                  onChange={e => setNewNoteContent(e.target.value)} />
               </div>
             </div>
-            <div className="fullscreen-resume-body" style={{ overflowY: 'auto', padding: '1rem' }}>
-              {studentProfile.resumeType.startsWith('image/') ? (
-                <img src={resumeBlobUrl || studentProfile.resumeData} alt="Fullscreen Resume" className="fullscreen-resume-img" />
-              ) : (
-                <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
-              )}
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIsAddNoteOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddNote}>Save Note</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Full Note & AI Task Intelligence Detail Popup Modal */}
+      {/* Note Detail Modal */}
       {activeViewNote && (
         <div className="modal-overlay" onClick={() => setActiveViewNote(null)}>
-          <div className="modal-content note-detail-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+          <div className="modal modal-wide" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-handle" />
             <div className="modal-header">
-              <div className="modal-title">
-                <StickyNote size={22} className="modal-icon" />
+              <div className="modal-title-group">
+                <div className="modal-icon-wrap"><Note size={18} weight="fill" /></div>
                 <div>
-                  <h3>{activeViewNote.title}</h3>
-                  <span className="modal-subtitle">Created: {activeViewNote.date}</span>
+                  <h3 className="modal-title">{activeViewNote.title}</h3>
+                  <p className="modal-subtitle">Created {activeViewNote.date}</p>
                 </div>
               </div>
-              <button className="modal-close-btn" onClick={() => setActiveViewNote(null)}>
-                <X size={20} />
+              <button className="modal-close" onClick={() => setActiveViewNote(null)} aria-label="Close">
+                <X size={18} weight="bold" />
               </button>
             </div>
+            <div className="modal-body">
+              {/* Note content */}
+              <div className="note-content-box">{activeViewNote.content}</div>
 
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Raw Note Content */}
-              <div className="note-popup-content-box">
-                <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Original Note Content</h4>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: '1.5', whiteSpace: 'pre-wrap', margin: 0 }}>
-                  {activeViewNote.content}
-                </p>
-              </div>
+              {/* PDF attachment */}
+              {activeViewNote.pdfAttachment && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', padding: 'var(--sp-3)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                  <FileText size={16} weight="fill" style={{ color: 'var(--error)', flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-2)' }}>{activeViewNote.pdfAttachment.name}</span>
+                </div>
+              )}
 
-              {/* Background Long Task Execution Status Banner */}
-              <div className="background-execution-banner">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-indigo)' }} />
-                  <div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-indigo)' }}>BACKGROUND AUTOPILOT RUNNING</span>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', margin: 0 }}>Idle device power mode enabled • Long tasks like PDF generation (2-5 pages) remain active in background</p>
-                  </div>
+              {/* Autopilot banner */}
+              <div className="autopilot-bar">
+                <ArrowsClockwise size={14} weight="bold" style={{ color: 'var(--accent)', flexShrink: 0, animation: 'spin 2s linear infinite' }} />
+                <div>
+                  <p className="autopilot-label">Background Autopilot</p>
+                  <p className="autopilot-desc">Idle device power mode active. Long tasks run in background.</p>
                 </div>
               </div>
 
-              {/* AI Processing & Completion Progress Percentage */}
-              <div className="note-popup-progress-card" style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Task Extraction Completion
-                  </span>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)' }}>
-                    {activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? '100% Processed' : '0% Processed'}
+              {/* Extraction progress */}
+              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 'var(--sp-3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-2)' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Task Extraction</span>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--accent)' }}>
+                    {activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? '100%' : '0%'}
                   </span>
                 </div>
-                <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      height: '100%',
-                      width: activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? '100%' : '15%',
-                      background: 'var(--color-indigo)',
-                      borderRadius: '4px',
-                      transition: 'width 0.4s ease'
-                    }}
-                  />
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: activeViewNote.extractedTasks?.length ? '100%' : '0%' }} />
                 </div>
               </div>
 
-              {/* Task Extraction Results (Clean Professional Minimal UI) */}
-              <div className="note-popup-tasks-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Extracted Action Items ({activeViewNote.extractedTasks?.length || 0})
-                  </h4>
+              {/* Extracted tasks */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-3)' }}>
+                  <p style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-1)' }}>
+                    Action Items ({activeViewNote.extractedTasks?.length || 0})
+                  </p>
                   <button
                     className="btn btn-secondary btn-xs"
                     onClick={() => handleAnalyzeNoteTaskIntelligence(activeViewNote)}
                     disabled={isAnalyzingNoteId === activeViewNote.id}
-                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
                   >
-                    {isAnalyzingNoteId === activeViewNote.id ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    <span>Re-Analyze Note</span>
+                    <ArrowsClockwise size={11} weight="bold" className={isAnalyzingNoteId === activeViewNote.id ? 'animate-spin' : ''} />
+                    Re-analyze
                   </button>
                 </div>
 
                 {activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {activeViewNote.extractedTasks.map((task) => (
-                      <div key={task.id} className="popup-task-card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <span className={`task-category-pill ${task.category.toLowerCase()}`}>{task.category}</span>
-                            <span className={`task-priority-pill ${task.priority.toLowerCase()}`} style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                              Priority: {task.priority}
-                            </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+                    {activeViewNote.extractedTasks.map(task => (
+                      <div key={task.id} className="task-card">
+                        <div className="task-card-header">
+                          <div className="task-pills">
+                            <span className={`task-pill ${task.category.toLowerCase()}`}>{task.category}</span>
+                            <span className={`task-pill ${task.priority.toLowerCase()}`}>{task.priority}</span>
                           </div>
                           {task.dueDate && (
-                            <span className="task-due-date" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#dc2626' }}>
-                              Due: {task.dueDate} {task.time ? `at ${task.time}` : ''}
-                            </span>
+                            <span className="task-due">Due: {task.dueDate}{task.time ? ` at ${task.time}` : ''}</span>
                           )}
                         </div>
-
-                        <h5 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0.5rem 0 0.3rem 0' }}>{task.title}</h5>
-
-                        {/* Checklist Subtasks */}
+                        <p className="task-title">{task.title}</p>
                         {task.subtasks && task.subtasks.length > 0 && (
-                          <div style={{ marginTop: '0.5rem', background: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subtasks Checklist</span>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.35rem' }}>
-                              {task.subtasks.map((sub, idx) => (
-                                <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                                  <input type="checkbox" defaultChecked={false} style={{ accentColor: 'var(--color-indigo)' }} />
-                                  <span>{sub}</span>
-                                </label>
-                              ))}
-                            </div>
+                          <div className="subtask-list">
+                            <p className="subtask-list-label">Subtasks</p>
+                            {task.subtasks.map((sub, idx) => (
+                              <label key={idx} className="subtask-item">
+                                <input type="checkbox" defaultChecked={false} />
+                                <span>{sub}</span>
+                              </label>
+                            ))}
                           </div>
                         )}
-
-                        {/* Action Buttons */}
-                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
                           {task.academicMemoryAction && (
-                            <button
-                              className="btn btn-primary btn-xs"
-                              onClick={() => triggerAlert(`${task.academicMemoryAction} integrated into Academic Profile.`, 'success')}
-                              style={{ fontSize: '0.72rem' }}
-                            >
+                            <button className="btn btn-primary btn-xs"
+                              onClick={() => triggerAlert(`${task.academicMemoryAction} integrated into Academic Profile.`, 'success')}>
                               {task.academicMemoryAction}
                             </button>
                           )}
                           {task.category === 'Assignment' && (
-                            <button
-                              className="btn btn-secondary btn-xs"
-                              onClick={() => handleGenerateAssignmentPdf(activeViewNote)}
-                              style={{ fontSize: '0.72rem' }}
-                            >
-                              Generate Assignment PDF (Background)
+                            <button className="btn btn-secondary btn-xs"
+                              onClick={() => handleGenerateAssignmentPdf(activeViewNote)}>
+                              Generate PDF (Background)
                             </button>
                           )}
                         </div>
@@ -2976,227 +2428,168 @@ Answer directly and personally using the student's profile and context above. Do
                     ))}
                   </div>
                 ) : (
-                  <div style={{ padding: '1.5rem', textAlign: 'center', background: '#f8fafc', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.5rem 0' }}>No tasks extracted yet for this note.</p>
-                    <button
-                      className="btn btn-primary btn-xs"
+                  <div style={{ textAlign: 'center', padding: 'var(--sp-6) var(--sp-4)', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border-strong)' }}>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-3)', marginBottom: 'var(--sp-3)' }}>
+                      No action items extracted yet.
+                    </p>
+                    <button className="btn btn-primary btn-sm"
                       onClick={() => handleAnalyzeNoteTaskIntelligence(activeViewNote)}
-                      disabled={isAnalyzingNoteId === activeViewNote.id}
-                    >
-                      Process Action Items
+                      disabled={isAnalyzingNoteId === activeViewNote.id}>
+                      {isAnalyzingNoteId === activeViewNote.id
+                        ? <><ArrowsClockwise size={12} weight="bold" className="animate-spin" /> Processing...</>
+                        : 'Extract Action Items'}
                     </button>
                   </div>
                 )}
               </div>
             </div>
-
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setActiveViewNote(null)}>Close</button>
-              <button
-                className="btn btn-secondary delete-resume-btn"
-                onClick={() => {
-                  handleDeleteNote(activeViewNote.id);
-                  setActiveViewNote(null);
-                }}
-              >
-                Delete Note
+              <button className="btn btn-ghost" onClick={() => setActiveViewNote(null)}>Close</button>
+              <button className="btn btn-danger" onClick={() => { handleDeleteNote(activeViewNote.id); setActiveViewNote(null); }}>
+                <Trash size={14} weight="bold" /> Delete Note
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Note Modal */}
-      {isAddNoteOpen && (
-        <div className="modal-overlay" onClick={() => setIsAddNoteOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">
-                <StickyNote size={20} className="modal-icon" />
-                <h3>Add New Note</h3>
-              </div>
-              <button className="modal-close-btn" onClick={() => setIsAddNoteOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label>Title</label>
-                <input
-                  type="text"
-                  placeholder="Note Title..."
-                  value={newNoteTitle}
-                  onChange={(e) => setNewNoteTitle(e.target.value)}
-                  className="text-input"
-                />
-              </div>
-              <div className="form-group">
-                <label>Content</label>
-                <textarea
-                  rows={4}
-                  placeholder="Write your note here..."
-                  value={newNoteContent}
-                  onChange={(e) => setNewNoteContent(e.target.value)}
-                  className="text-input"
-                  style={{ width: '100%', resize: 'vertical' }}
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setIsAddNoteOpen(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleAddNote}>Save Note</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* App Lock Modal (Shakle App Locker) */}
+      {/* App Lock Modal */}
       {isLockModalOpen && (
         <div className="modal-overlay" onClick={() => setIsLockModalOpen(false)}>
-          <div className="modal-content lock-modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-locker" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-handle" />
             <div className="modal-header">
-              <div className="modal-title">
-                <Lock size={22} className="modal-icon lock-icon-theme" />
+              <div className="modal-title-group">
+                <div className="modal-icon-wrap"><Lock size={18} weight="fill" /></div>
                 <div>
-                  <h3>App Focus Locker</h3>
-                  <span className="modal-subtitle">Sakle Engine • Enforced Application Blocking</span>
+                  <h3 className="modal-title">App Focus Locker</h3>
+                  <p className="modal-subtitle">Sakle Engine · Enforced Application Blocking</p>
                 </div>
               </div>
-              <button className="modal-close-btn" onClick={() => setIsLockModalOpen(false)}>
-                <X size={20} />
+              <button className="modal-close" onClick={() => setIsLockModalOpen(false)} aria-label="Close">
+                <X size={18} weight="bold" />
               </button>
             </div>
-
-            {!isAccessibilityEnabled && (
-              <div className="accessibility-alert-banner">
-                <AlertTriangle size={20} />
-                <div style={{ flex: 1 }}>
-                  <strong>Accessibility Permission Required</strong>
-                  <p>Enable Accessibility Service for Proxims in Settings so it can enforce app locks.</p>
+            <div className="modal-body" style={{ paddingTop: 'var(--sp-3)' }}>
+              {!isAccessibilityEnabled && (
+                <div className="accessibility-alert">
+                  <Warning size={18} weight="fill" className="accessibility-alert-icon" />
+                  <div className="accessibility-alert-body">
+                    <strong>Accessibility Permission Required</strong>
+                    <p>Enable the Accessibility Service for Proxims in Settings.</p>
+                  </div>
+                  <button className="btn btn-primary btn-sm"
+                    onClick={async () => { await AppLock.openAccessibilitySettings(); }}>
+                    Enable
+                  </button>
                 </div>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={async () => {
-                    await AppLock.openAccessibilitySettings();
-                  }}
-                >
-                  Enable
-                </button>
-              </div>
-            )}
-
-            <div className="app-search-bar-wrapper">
-              <Search size={18} className="search-icon" />
-              <input
-                type="text"
-                placeholder="Search installed applications..."
-                value={appSearchQuery}
-                onChange={(e) => setAppSearchQuery(e.target.value)}
-                className="app-search-input"
-              />
-            </div>
-
-            <div className="apps-list-container">
-              {isLoadingApps ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: '#64748b', gap: '0.5rem' }}>
-                  <RefreshCw size={24} className="animate-spin" />
-                  <span style={{ fontSize: '0.85rem' }}>Loading installed applications...</span>
-                </div>
-              ) : (
-                installedApps
-                  .filter(app => app.appName.toLowerCase().includes(appSearchQuery.toLowerCase()))
-                  .map(app => {
-                    const remainingMs = app.endTimeMs - currentTimeTick;
-                    const isBlocked = remainingMs > 0;
-
-                    let formattedTime = '';
-                    if (isBlocked) {
-                      if (app.endTimeMs === Long_MAX_VALUE || remainingMs > 365 * 24 * 60 * 60 * 1000) {
-                        formattedTime = 'Blocked Infinite';
-                      } else {
-                        const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
-                        const hours = Math.floor((remainingMs / (1000 * 60 * 60)) % 24);
-                        const mins = Math.floor((remainingMs / (1000 * 60)) % 60);
-                        const secs = Math.floor((remainingMs / 1000) % 60);
-                        formattedTime = days > 0
-                          ? `${days}d ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`
-                          : `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`;
-                      }
-                    }
-
-                    const selectedUnit = customUnits[app.packageName] || 'MINUTES';
-                    const selectedDuration = customDurations[app.packageName] || '';
-                    const isItemLocking = lockingPackage === app.packageName;
-
-                    return (
-                      <div key={app.packageName} className="app-lock-item-row">
-                        <div className="app-item-info">
-                          {app.icon ? (
-                            <img src={app.icon} alt={app.appName} className="app-item-icon" />
-                          ) : (
-                            <div className="app-item-icon-fallback"><Lock size={20} /></div>
-                          )}
-                          <div className="app-item-text">
-                            <span className="app-item-name">{app.appName}</span>
-                            {isBlocked ? (
-                              <span className="app-blocked-timer">{formattedTime}</span>
-                            ) : (
-                              <span className="app-package-id">{app.packageName}</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="app-lock-controls">
-                          {isBlocked ? (
-                            <span className="badge-locked">LOCKED</span>
-                          ) : (
-                            <>
-                              {selectedUnit !== 'INFINITE' && (
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="Qty"
-                                  value={selectedDuration}
-                                  onChange={(e) => setCustomDurations({ ...customDurations, [app.packageName]: e.target.value })}
-                                  className="duration-input"
-                                />
-                              )}
-                              <select
-                                value={selectedUnit}
-                                onChange={(e) => setCustomUnits({ ...customUnits, [app.packageName]: e.target.value as any })}
-                                className="unit-select"
-                              >
-                                <option value="MINUTES">Mins</option>
-                                <option value="HOURS">Hours</option>
-                                <option value="DAYS">Days</option>
-                                <option value="INFINITE">Infinite</option>
-                              </select>
-                              <button
-                                className="btn btn-primary btn-lock-action"
-                                onClick={() => handleStartAppLock(app.packageName)}
-                                disabled={!isAccessibilityEnabled || (selectedUnit !== 'INFINITE' && !selectedDuration) || isItemLocking}
-                                title="Enforce App Lock"
-                              >
-                                {isItemLocking ? (
-                                  <RefreshCw size={14} className="animate-spin" />
-                                ) : (
-                                  <>
-                                    <Lock size={14} /> Lock
-                                  </>
-                                )}
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
               )}
+              <div className="search-bar">
+                <MagnifyingGlass size={16} weight="bold" className="search-bar-icon" />
+                <input type="search" placeholder="Search installed apps..." value={appSearchQuery}
+                  onChange={e => setAppSearchQuery(e.target.value)} className="search-input" />
+              </div>
+              <div className="apps-list">
+                {isLoadingApps ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', gap: 'var(--sp-3)', color: 'var(--text-3)' }}>
+                    <ArrowsClockwise size={22} weight="bold" className="animate-spin" />
+                    <span style={{ fontSize: '0.875rem' }}>Loading installed apps...</span>
+                  </div>
+                ) : installedApps.filter(app => app.appName.toLowerCase().includes(appSearchQuery.toLowerCase())).map(app => {
+                  const remainingMs = app.endTimeMs - currentTimeTick;
+                  const isBlocked = remainingMs > 0;
+                  let formattedTime = '';
+                  if (isBlocked) {
+                    if (app.endTimeMs === Long_MAX_VALUE || remainingMs > 365 * 24 * 60 * 60 * 1000) {
+                      formattedTime = 'Blocked Infinite';
+                    } else {
+                      const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+                      const hours = Math.floor((remainingMs / (1000 * 60 * 60)) % 24);
+                      const mins = Math.floor((remainingMs / (1000 * 60)) % 60);
+                      const secs = Math.floor((remainingMs / 1000) % 60);
+                      formattedTime = days > 0
+                        ? `${days}d ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`
+                        : `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`;
+                    }
+                  }
+                  const selectedUnit = customUnits[app.packageName] || 'MINUTES';
+                  const selectedDuration = customDurations[app.packageName] || '';
+                  const isItemLocking = lockingPackage === app.packageName;
+                  return (
+                    <div key={app.packageName} className="app-lock-row">
+                      {app.icon
+                        ? <img src={app.icon} alt={app.appName} className="app-icon" />
+                        : <div className="app-icon-fallback"><Lock size={16} weight="bold" /></div>}
+                      <div className="app-info">
+                        <p className="app-name">{app.appName}</p>
+                        {isBlocked
+                          ? <p className="app-lock-timer">{formattedTime}</p>
+                          : <p className="app-pkg">{app.packageName}</p>}
+                      </div>
+                      <div className="app-lock-controls">
+                        {isBlocked ? (
+                          <span className="badge-locked">LOCKED</span>
+                        ) : (
+                          <>
+                            {selectedUnit !== 'INFINITE' && (
+                              <input type="number" min="1" placeholder="Qty" value={selectedDuration}
+                                onChange={e => setCustomDurations({ ...customDurations, [app.packageName]: e.target.value })}
+                                className="duration-input" />
+                            )}
+                            <select value={selectedUnit}
+                              onChange={e => setCustomUnits({ ...customUnits, [app.packageName]: e.target.value as any })}
+                              className="unit-select">
+                              <option value="MINUTES">Mins</option>
+                              <option value="HOURS">Hours</option>
+                              <option value="DAYS">Days</option>
+                              <option value="INFINITE">Infinite</option>
+                            </select>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleStartAppLock(app.packageName)}
+                              disabled={!isAccessibilityEnabled || (selectedUnit !== 'INFINITE' && !selectedDuration) || isItemLocking}
+                            >
+                              {isItemLocking
+                                ? <ArrowsClockwise size={12} weight="bold" className="animate-spin" />
+                                : <><Lock size={12} weight="fill" /> Lock</>}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Fullscreen Resume Viewer */}
+      {isFullscreenResumeOpen && (
+        <div className="fullscreen-overlay">
+          <div className="fullscreen-header">
+            <div className="fullscreen-title">
+              <FileText size={18} weight="fill" style={{ color: 'var(--error)', flexShrink: 0 }} />
+              <span>{studentProfile.resumeName || 'Student_Resume.pdf'}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+              <button className="btn btn-primary btn-sm" onClick={handleDownloadResume}>
+                <Download size={13} weight="bold" /> Download
+              </button>
+              <button className="icon-btn" onClick={() => setIsFullscreenResumeOpen(false)} aria-label="Close">
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+          </div>
+          <div className="fullscreen-body">
+            {studentProfile.resumeType.startsWith('image/')
+              ? <img src={resumeBlobUrl || studentProfile.resumeData} alt="Resume" style={{ maxWidth: '100%', borderRadius: 'var(--r-md)' }} />
+              : <PdfCanvasViewer dataUrl={studentProfile.resumeData} />}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
-const Long_MAX_VALUE = 9223372036854775807;
