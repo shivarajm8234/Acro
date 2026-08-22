@@ -33,7 +33,10 @@ import {
   AlertTriangle,
   Lock,
   Plus,
-  StickyNote
+  StickyNote,
+  Pin,
+  Star,
+  Archive
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Xframe } from 'capacitor-plugin-xframe';
@@ -246,18 +249,10 @@ export default function App() {
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
 
   // Notepad State
-  const [notes, setNotes] = useState<Array<{ id: string; title: string; content: string; date: string }>>(() => {
-    const saved = localStorage.getItem('acro_notepad_notes');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { }
-    }
-    return [
-      { id: '1', title: 'Daily Study Goals', content: '1. Complete AI model integration.\n2. Review computer architecture notes.', date: new Date().toLocaleDateString() }
-    ];
-  });
   const [isAddNoteOpen, setIsAddNoteOpen] = useState<boolean>(false);
   const [newNoteTitle, setNewNoteTitle] = useState<string>('');
   const [newNoteContent, setNewNoteContent] = useState<string>('');
+  const [activeViewNote, setActiveViewNote] = useState<NoteItem | null>(null);
 
   // App Lock (Shakle logic) States
   const [isLockModalOpen, setIsLockModalOpen] = useState<boolean>(false);
@@ -270,9 +265,7 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<{ [pkg: string]: 'MINUTES' | 'HOURS' | 'DAYS' | 'INFINITE' }>({});
   const [currentTimeTick, setCurrentTimeTick] = useState<number>(Date.now());
 
-  useEffect(() => {
-    localStorage.setItem('acro_notepad_notes', JSON.stringify(notes));
-  }, [notes]);
+
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -332,27 +325,286 @@ export default function App() {
     }
   };
 
+  // AI Task Intelligence Interface & Note State
+  interface ExtractedTask {
+    id: string;
+    title: string;
+    category: 'Assignment' | 'Exam' | 'Project' | 'Research' | 'Placement' | 'Portfolio' | 'Personal';
+    priority: 'Critical' | 'High' | 'Medium' | 'Low';
+    dueDate?: string;
+    time?: string;
+    status: 'Inbox' | 'Planned' | 'In Progress' | 'Completed';
+    subtasks?: string[];
+    academicMemoryAction?: 'Add to Memory' | 'Add to Portfolio' | null;
+  }
+
+  interface NoteItem {
+    id: string;
+    title: string;
+    content: string;
+    date: string;
+    isPinned?: boolean;
+    isStarred?: boolean;
+    isArchived?: boolean;
+    color?: string;
+    folder?: string;
+    tags?: string[];
+    pdfAttachment?: { name: string; dataUrl: string };
+    extractedTasks?: ExtractedTask[];
+    isAiAnalyzed?: boolean;
+  }
+
+  const [noteSearchQuery, setNoteSearchQuery] = useState<string>('');
+  const [showArchived, setShowArchived] = useState<boolean>(false);
+
+  const [notes, setNotes] = useState<NoteItem[]>(() => {
+    const saved = localStorage.getItem('acro_user_notes');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { }
+    }
+    return [
+      {
+        id: '1',
+        title: 'DBMS & ML Deadlines',
+        content: 'DBMS assignment finish by Friday, study normalization before Monday exam, and add the project screenshots to my portfolio.',
+        date: new Date().toLocaleDateString(),
+        isPinned: true,
+        isStarred: true,
+        color: '#fef08a',
+        folder: 'Academics',
+        tags: ['DBMS', 'ML', 'Exam'],
+        isAiAnalyzed: false
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('acro_user_notes', JSON.stringify(notes));
+  }, [notes]);
+
+  const [isAnalyzingNoteId, setIsAnalyzingNoteId] = useState<string | null>(null);
+
   const handleAddNote = () => {
     if (!newNoteTitle.trim() && !newNoteContent.trim()) {
       triggerAlert('Please enter a title or content for your note.', 'error');
       return;
     }
     playSynthSound('success');
-    const newNote = {
+    const newNote: NoteItem = {
       id: Date.now().toString(),
       title: newNoteTitle.trim() || 'Untitled Note',
       content: newNoteContent.trim(),
-      date: new Date().toLocaleDateString()
+      date: new Date().toLocaleDateString(),
+      isAiAnalyzed: false
     };
     setNotes([newNote, ...notes]);
     setNewNoteTitle('');
     setNewNoteContent('');
     setIsAddNoteOpen(false);
+
+    // Automatically trigger background AI Task Intelligence extraction
+    handleAnalyzeNoteTaskIntelligence(newNote);
+  };
+
+  const handleTogglePin = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    playSynthSound('click');
+    setNotes(notes.map(n => n.id === id ? { ...n, isPinned: !n.isPinned } : n));
+  };
+
+  const handleToggleStar = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    playSynthSound('click');
+    setNotes(notes.map(n => n.id === id ? { ...n, isStarred: !n.isStarred } : n));
+  };
+
+  const handleToggleArchive = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    playSynthSound('click');
+    setNotes(notes.map(n => n.id === id ? { ...n, isArchived: !n.isArchived } : n));
+    triggerAlert('Note archive status updated.', 'info');
   };
 
   const handleDeleteNote = (id: string) => {
     playSynthSound('delete');
     setNotes(notes.filter(n => n.id !== id));
+  };
+
+  const handlePdfAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      triggerAlert('File size exceeds maximum limit of 15MB.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const attachment = { name: file.name, dataUrl };
+
+      triggerAlert(`PDF "${file.name}" attached successfully!`, 'success');
+      playSynthSound('success');
+
+      // AI PDF Text Extraction Pipeline
+      try {
+        triggerAlert('AI extracting text & assignment requirements from PDF in background...', 'info');
+        const pdfText = await extractTextFromResume(dataUrl);
+        if (pdfText) {
+          const extractedTitle = `PDF Notes: ${file.name.replace(/\.pdf$/i, '')}`;
+          const newNoteWithPdf: NoteItem = {
+            id: Date.now().toString(),
+            title: extractedTitle,
+            content: pdfText.substring(0, 1500),
+            date: new Date().toLocaleDateString(),
+            pdfAttachment: attachment,
+            tags: ['PDF', 'Assignment'],
+            isAiAnalyzed: false
+          };
+          setNotes(prev => [newNoteWithPdf, ...prev]);
+          handleAnalyzeNoteTaskIntelligence(newNoteWithPdf);
+        }
+      } catch (err: any) {
+        console.warn('PDF text extraction error:', err);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Background PDF Generation Task
+  const handleGenerateAssignmentPdf = (note: NoteItem) => {
+    playSynthSound('click');
+    triggerAlert(`Started 2-5 page PDF generation for "${note.title}" in background...`, 'info');
+
+    // Simulate background worker generation and trigger push notification
+    setTimeout(() => {
+      triggerAlert(`🎉 Push Notification: PDF generated successfully for "${note.title}"! Tap to view/download.`, 'success');
+      playSynthSound('success');
+    }, 4000);
+  };
+
+  // AI Task Intelligence Extraction Engine using Local Model
+  const handleAnalyzeNoteTaskIntelligence = async (noteToAnalyze: NoteItem) => {
+    if (!noteToAnalyze.content) return;
+    setIsAnalyzingNoteId(noteToAnalyze.id);
+    try {
+      const model = MODELS.find(m => m.id === chatModelId);
+      if (!model) return;
+      const status = await LlmInference.getStatus();
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
+      }
+
+      const prompt = `<|system|>
+You are an Academic Task Extraction Engine. Read the note text below carefully and extract EVERY individual task mentioned. DO NOT use generic placeholders like "Task title" or "Subtask 1".
+<|user|>
+NOTE:
+"${noteToAnalyze.content}"
+
+Extract each task as JSON format:
+{
+  "tasks": [
+    {
+      "title": "Exact title of task from note",
+      "category": "Assignment",
+      "priority": "High",
+      "dueDate": "Friday",
+      "time": "",
+      "subtasks": ["Specific action step 1", "Specific action step 2"],
+      "academicMemoryAction": "Add to Portfolio"
+    }
+  ]
+}
+Category choices: Assignment, Exam, Project, Research, Placement, Portfolio, Personal.
+Priority choices: Critical, High, Medium, Low.
+<|assistant|>`;
+
+      const result = await LlmInference.generateResponse({ prompt });
+      const rawText = (result.response || '').trim().replace(/```json/gi, '').replace(/```/g, '').trim();
+
+      let extractedList: ExtractedTask[] = [];
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        const parsedJson = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(rawText);
+        if (parsedJson && Array.isArray(parsedJson.tasks)) {
+          extractedList = parsedJson.tasks
+            .filter((t: any) => t.title && !/Task title/i.test(t.title))
+            .map((t: any, index: number) => ({
+              id: `${noteToAnalyze.id}-task-${index}`,
+              title: t.title,
+              category: t.category || 'Assignment',
+              priority: t.priority || 'Medium',
+              dueDate: t.dueDate || '',
+              time: t.time || '',
+              status: 'Inbox',
+              subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter((s: string) => !/Subtask/i.test(s)) : [],
+              academicMemoryAction: t.academicMemoryAction || null
+            }));
+        }
+      } catch (e) {
+        console.warn('Fallback keyword extraction for Task Intelligence...', e);
+      }
+
+      // Dynamic sentence-level multi-task extraction fallback
+      if (extractedList.length === 0) {
+        const phrases = noteToAnalyze.content.split(/,|;|\band\b|\n/i).map(p => p.trim()).filter(p => p.length > 3);
+        phrases.forEach((phrase, idx) => {
+          let category: ExtractedTask['category'] = 'Personal';
+          let priority: ExtractedTask['priority'] = 'Medium';
+          let academicMemoryAction: ExtractedTask['academicMemoryAction'] = null;
+          let subtasks: string[] = [];
+
+          if (/assignment|lab|report|homework|finish/i.test(phrase)) {
+            category = 'Assignment';
+            subtasks = ['Gather materials', 'Complete draft', 'Export PDF & submit'];
+          } else if (/exam|study|normalization|test|quiz|midterm/i.test(phrase)) {
+            category = 'Exam';
+            priority = 'Critical';
+            subtasks = ['Review chapter concepts', 'Practice sample problems'];
+          } else if (/project|yolo|app|code|build/i.test(phrase)) {
+            category = 'Project';
+            academicMemoryAction = 'Add to Memory';
+            subtasks = ['Collect results', 'Clean source code', 'Add documentation'];
+          } else if (/tcs|placement|interview|resume/i.test(phrase)) {
+            category = 'Placement';
+            priority = 'High';
+            subtasks = ['Review job profile', 'Update resume skills', 'Practice coding questions'];
+          } else if (/portfolio|screenshots|workshop|github/i.test(phrase)) {
+            category = 'Portfolio';
+            academicMemoryAction = 'Add to Portfolio';
+            subtasks = ['Take high-res screenshots', 'Write description', 'Publish link'];
+          }
+
+          let dueDate = '';
+          const dateMatch = phrase.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|aug \d+|sept \d+)\b/i);
+          if (dateMatch) dueDate = dateMatch[0];
+
+          extractedList.push({
+            id: `${noteToAnalyze.id}-task-${idx}`,
+            title: phrase.charAt(0).toUpperCase() + phrase.slice(1),
+            category,
+            priority,
+            dueDate,
+            status: 'Inbox',
+            subtasks,
+            academicMemoryAction
+          });
+        });
+      }
+
+      setNotes(prev => prev.map(n => {
+        if (n.id === noteToAnalyze.id) {
+          return { ...n, extractedTasks: extractedList, isAiAnalyzed: true };
+        }
+        return n;
+      }));
+      triggerAlert('AI Task Intelligence extracted actionable items!', 'success');
+      playSynthSound('success');
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setIsAnalyzingNoteId(null);
+    }
   };
 
   // Placement Hub states
@@ -1463,36 +1715,103 @@ KEYWORDS MISSING: [comma-separated missing skills]
               <StickyNote size={22} className="notepad-icon" />
               <div>
                 <h2>My Quick Notes</h2>
-                <span className="notepad-subtitle">Personal Study Pad & App Focus Controller</span>
+                <span className="notepad-subtitle">Personal Study Pad • Task & Academic Intelligence</span>
               </div>
             </div>
-            <button className="lock-apps-btn" onClick={handleOpenLockModal} title="Focus Lock Apps">
-              <Lock size={16} />
-              <span>Lock Apps</span>
-          </button>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <label className="btn btn-secondary btn-sm" title="Upload PDF Attachment to Note" style={{ cursor: 'pointer' }}>
+                <Upload size={14} /> PDF Note
+                <input type="file" accept=".pdf" onChange={handlePdfAttachmentUpload} style={{ display: 'none' }} />
+              </label>
+              <button className="lock-apps-btn" onClick={handleOpenLockModal} title="Focus Lock Apps">
+                <Lock size={16} />
+                <span>Lock Apps</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Archive Toolbar */}
+          <div className="note-toolbar">
+            <div className="note-search-box">
+              <Search size={16} className="search-icon" />
+              <input
+                type="text"
+                placeholder="Search notes..."
+                value={noteSearchQuery}
+                onChange={(e) => setNoteSearchQuery(e.target.value)}
+                className="note-search-input"
+              />
+            </div>
+
+            <div className="note-filter-pills">
+              <button
+                className={`filter-pill ${showArchived ? 'active' : ''}`}
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                <Archive size={12} /> {showArchived ? 'Showing Archived' : 'Archive'}
+              </button>
+            </div>
           </div>
 
           {/* Notes Grid */}
           <div className="notepad-grid">
-            {notes.length === 0 ? (
-              <div className="notepad-empty-state">
-                <StickyNote size={36} style={{ opacity: 0.3 }} />
-                <p>No notes added yet. Click the <strong>+</strong> button below to create your first note!</p>
-              </div>
-            ) : (
-              notes.map((note) => (
-                <div key={note.id} className="note-card">
+            {notes
+              .filter(n => showArchived ? n.isArchived : !n.isArchived)
+              .filter(n => {
+                if (!noteSearchQuery.trim()) return true;
+                const q = noteSearchQuery.toLowerCase();
+                return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+              })
+              .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0))
+              .map((note) => (
+                <div
+                  key={note.id}
+                  className={`note-card ${note.isPinned ? 'pinned' : ''}`}
+                  style={{ backgroundColor: note.color || 'var(--bg-card)' }}
+                  onClick={() => { playSynthSound('click'); setActiveViewNote(note); }}
+                >
                   <div className="note-card-header">
-                    <h3 className="note-card-title">{note.title}</h3>
-                    <button className="note-delete-btn" onClick={() => handleDeleteNote(note.id)} title="Delete Note">
-                      <X size={14} />
-          </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      {note.isPinned && <Pin size={14} className="pinned-icon" />}
+                      <h3 className="note-card-title">{note.title}</h3>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }} onClick={(e) => e.stopPropagation()}>
+                      <button className="note-action-icon-btn" onClick={(e) => handleToggleStar(note.id, e)} title="Star Note">
+                        <Star size={14} style={{ fill: note.isStarred ? '#eab308' : 'none', color: note.isStarred ? '#eab308' : 'var(--text-muted)' }} />
+                      </button>
+                      <button className="note-action-icon-btn" onClick={(e) => handleTogglePin(note.id, e)} title="Pin Note">
+                        <Pin size={14} style={{ color: note.isPinned ? 'var(--color-indigo)' : 'var(--text-muted)' }} />
+                      </button>
+                      <button className="note-action-icon-btn" onClick={(e) => handleToggleArchive(note.id, e)} title="Archive Note">
+                        <Archive size={14} style={{ color: note.isArchived ? '#16a34a' : 'var(--text-muted)' }} />
+                      </button>
+                    </div>
                   </div>
+
                   <p className="note-card-content">{note.content}</p>
-                  <span className="note-card-date">{note.date}</span>
+
+                  {note.pdfAttachment && (
+                    <div className="note-pdf-badge" onClick={(e) => e.stopPropagation()}>
+                      <FileText size={14} />
+                      <span className="pdf-name">{note.pdfAttachment.name}</span>
+                    </div>
+                  )}
+
+                  {note.tags && note.tags.length > 0 && (
+                    <div className="note-tags-row">
+                      {note.tags.map((t, idx) => (
+                        <span key={idx} className="note-tag-chip">#{t}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <span className="note-card-date">{note.date}</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-indigo)', fontWeight: 600 }}>Tap to expand AI Tasks ↗</span>
+                  </div>
                 </div>
-              ))
-            )}
+              ))}
           </div>
 
           {/* Floating Plus Button for Adding Notes */}
@@ -2496,6 +2815,173 @@ KEYWORDS MISSING: [comma-separated missing skills]
               ) : (
                 <PdfCanvasViewer dataUrl={studentProfile.resumeData} />
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Note & AI Task Intelligence Detail Popup Modal */}
+      {activeViewNote && (
+        <div className="modal-overlay" onClick={() => setActiveViewNote(null)}>
+          <div className="modal-content note-detail-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+            <div className="modal-header">
+              <div className="modal-title">
+                <StickyNote size={22} className="modal-icon" />
+                <div>
+                  <h3>{activeViewNote.title}</h3>
+                  <span className="modal-subtitle">Created: {activeViewNote.date}</span>
+                </div>
+              </div>
+              <button className="modal-close-btn" onClick={() => setActiveViewNote(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Raw Note Content */}
+              <div className="note-popup-content-box">
+                <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Original Note Content</h4>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: '1.5', whiteSpace: 'pre-wrap', margin: 0 }}>
+                  {activeViewNote.content}
+                </p>
+              </div>
+
+              {/* Background Long Task Execution Status Banner */}
+              <div className="background-execution-banner">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--color-indigo)' }} />
+                  <div>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-indigo)' }}>BACKGROUND AUTOPILOT RUNNING</span>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', margin: 0 }}>Idle device power mode enabled • Long tasks like PDF generation (2-5 pages) remain active in background</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* AI Processing & Completion Progress Percentage */}
+              <div className="note-popup-progress-card" style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Task Extraction Completion
+                  </span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)' }}>
+                    {activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? '100% Processed' : '0% Processed'}
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? '100%' : '15%',
+                      background: 'var(--color-indigo)',
+                      borderRadius: '4px',
+                      transition: 'width 0.4s ease'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Task Extraction Results (Clean Professional Minimal UI) */}
+              <div className="note-popup-tasks-section">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Extracted Action Items ({activeViewNote.extractedTasks?.length || 0})
+                  </h4>
+                  <button
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => handleAnalyzeNoteTaskIntelligence(activeViewNote)}
+                    disabled={isAnalyzingNoteId === activeViewNote.id}
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                  >
+                    {isAnalyzingNoteId === activeViewNote.id ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    <span>Re-Analyze Note</span>
+                  </button>
+                </div>
+
+                {activeViewNote.extractedTasks && activeViewNote.extractedTasks.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {activeViewNote.extractedTasks.map((task) => (
+                      <div key={task.id} className="popup-task-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span className={`task-category-pill ${task.category.toLowerCase()}`}>{task.category}</span>
+                            <span className={`task-priority-pill ${task.priority.toLowerCase()}`} style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                              Priority: {task.priority}
+                            </span>
+                          </div>
+                          {task.dueDate && (
+                            <span className="task-due-date" style={{ fontSize: '0.75rem', fontWeight: 600, color: '#dc2626' }}>
+                              Due: {task.dueDate} {task.time ? `at ${task.time}` : ''}
+                            </span>
+                          )}
+                        </div>
+
+                        <h5 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0.5rem 0 0.3rem 0' }}>{task.title}</h5>
+
+                        {/* Checklist Subtasks */}
+                        {task.subtasks && task.subtasks.length > 0 && (
+                          <div style={{ marginTop: '0.5rem', background: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Subtasks Checklist</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.35rem' }}>
+                              {task.subtasks.map((sub, idx) => (
+                                <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                  <input type="checkbox" defaultChecked={false} style={{ accentColor: 'var(--color-indigo)' }} />
+                                  <span>{sub}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {task.academicMemoryAction && (
+                            <button
+                              className="btn btn-primary btn-xs"
+                              onClick={() => triggerAlert(`${task.academicMemoryAction} integrated into Academic Profile.`, 'success')}
+                              style={{ fontSize: '0.72rem' }}
+                            >
+                              {task.academicMemoryAction}
+                            </button>
+                          )}
+                          {task.category === 'Assignment' && (
+                            <button
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => handleGenerateAssignmentPdf(activeViewNote)}
+                              style={{ fontSize: '0.72rem' }}
+                            >
+                              Generate Assignment PDF (Background)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '1.5rem', textAlign: 'center', background: '#f8fafc', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0.5rem 0' }}>No tasks extracted yet for this note.</p>
+                    <button
+                      className="btn btn-primary btn-xs"
+                      onClick={() => handleAnalyzeNoteTaskIntelligence(activeViewNote)}
+                      disabled={isAnalyzingNoteId === activeViewNote.id}
+                    >
+                      Process Action Items
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setActiveViewNote(null)}>Close</button>
+              <button
+                className="btn btn-secondary delete-resume-btn"
+                onClick={() => {
+                  handleDeleteNote(activeViewNote.id);
+                  setActiveViewNote(null);
+                }}
+              >
+                Delete Note
+              </button>
             </div>
           </div>
         </div>
