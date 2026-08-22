@@ -167,17 +167,25 @@ public class LlmInferencePlugin extends Plugin {
             try {
                 long startTime = System.currentTimeMillis();
 
-                // Format prompt using Gemma instruct template
-                String formattedPrompt = "<start_of_turn>user\n" + prompt.trim() +
-                        "<end_of_turn>\n<start_of_turn>model\n";
+                // Format prompt using Gemma instruct template only if not pre-formatted
+                String formattedPrompt = prompt.trim();
+                if (!formattedPrompt.contains("<start_of_turn>")) {
+                    formattedPrompt = "<start_of_turn>user\n" + formattedPrompt + "\n<end_of_turn>\n<start_of_turn>model\n";
+                }
 
-                Log.d(TAG, "Running on-device inference for: \"" + prompt.trim() + "\"");
+                Log.d(TAG, "Running on-device inference for prompt length: " + formattedPrompt.length());
 
-                String response = llmInference.generateResponse(formattedPrompt);
+                String response = null;
+                try {
+                    response = llmInference.generateResponse(formattedPrompt);
+                } catch (Throwable t) {
+                    Log.e(TAG, "MediaPipe C++ native inference exception: " + t.getMessage(), t);
+                    call.reject("Native C++ inference error: " + t.getMessage());
+                    return;
+                }
+
                 long elapsed = System.currentTimeMillis() - startTime;
-
-                // Basic token count estimation (words * 1.3)
-                int estimatedTokens = (int) (response.split("\\s+").length * 1.3);
+                int estimatedTokens = (response != null && !response.isEmpty()) ? (int) (response.split("\\s+").length * 1.3) : 0;
 
                 Log.d(TAG, "✅ Inference complete in " + elapsed + "ms (" + estimatedTokens + " tokens)");
 

@@ -149,115 +149,120 @@ const Long_MAX_VALUE = 9223372036854775807;
 function renderMarkdown(text: string): React.ReactNode {
   if (!text) return null;
 
-  const lines = text.split('\n');
-  const elements: React.ReactNode[] = [];
-  let i = 0;
+  try {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let i = 0;
 
-  const parseInline = (str: string): React.ReactNode => {
-    // Handle bold+italic, bold, italic, inline code
-    const parts = str.split(/(\*\*\*.*?\*\*\*|\*\*.*?\*\*|\*.*?\*|`[^`]+`)/g);
-    return parts.map((part, idx) => {
-      if (part.startsWith('***') && part.endsWith('***')) {
-        return <strong key={idx}><em>{part.slice(3, -3)}</em></strong>;
-      }
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={idx}>{part.slice(2, -2)}</strong>;
-      }
-      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
-        return <em key={idx}>{part.slice(1, -1)}</em>;
-      }
-      if (part.startsWith('`') && part.endsWith('`')) {
-        return <code key={idx}>{part.slice(1, -1)}</code>;
-      }
-      return part;
-    });
-  };
+    const parseInline = (str: string): React.ReactNode => {
+      // Handle bold+italic, bold, italic, inline code
+      const parts = str.split(/(\*\*\*.*?\*\*\*|\*\*.*?\*\*|\*.*?\*|`[^`]+`)/g);
+      return parts.map((part, idx) => {
+        if (part.startsWith('***') && part.endsWith('***')) {
+          return <strong key={idx}><em>{part.slice(3, -3)}</em></strong>;
+        }
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={idx}>{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+          return <em key={idx}>{part.slice(1, -1)}</em>;
+        }
+        if (part.startsWith('`') && part.endsWith('`')) {
+          return <code key={idx}>{part.slice(1, -1)}</code>;
+        }
+        return part;
+      });
+    };
 
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
 
-    // Fenced code block
-    if (trimmed.startsWith('```')) {
-      const lang = trimmed.slice(3).trim();
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith('```')) {
-        codeLines.push(lines[i]);
+      // Fenced code block
+      if (trimmed.startsWith('```')) {
+        const lang = trimmed.slice(3).trim();
+        const codeLines: string[] = [];
         i++;
-      }
-      elements.push(
-        <pre key={`pre-${i}`}><code className={lang ? `language-${lang}` : ''}>{codeLines.join('\n')}</code></pre>
-      );
-      i++;
-      continue;
-    }
-
-    // Headings
-    if (trimmed.startsWith('### ')) {
-      elements.push(<h3 key={`h3-${i}`}>{parseInline(trimmed.slice(4))}</h3>);
-      i++;
-      continue;
-    }
-    if (trimmed.startsWith('## ')) {
-      elements.push(<h2 key={`h2-${i}`}>{parseInline(trimmed.slice(3))}</h2>);
-      i++;
-      continue;
-    }
-    if (trimmed.startsWith('# ')) {
-      elements.push(<h1 key={`h1-${i}`}>{parseInline(trimmed.slice(2))}</h1>);
-      i++;
-      continue;
-    }
-
-    // Blockquote
-    if (trimmed.startsWith('> ')) {
-      elements.push(<blockquote key={`bq-${i}`}>{parseInline(trimmed.slice(2))}</blockquote>);
-      i++;
-      continue;
-    }
-
-    // HR
-    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
-      elements.push(<hr key={`hr-${i}`} />);
-      i++;
-      continue;
-    }
-
-    // Unordered list
-    if (/^[-*+]\s/.test(trimmed)) {
-      const listItems: React.ReactNode[] = [];
-      while (i < lines.length && /^[-*+]\s/.test(lines[i].trim())) {
-        listItems.push(<li key={i}>{parseInline(lines[i].trim().slice(2))}</li>);
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        elements.push(
+          <pre key={`pre-${i}`}><code className={lang ? `language-${lang}` : ''}>{codeLines.join('\n')}</code></pre>
+        );
         i++;
+        continue;
       }
-      elements.push(<ul key={`ul-${i}`}>{listItems}</ul>);
-      continue;
-    }
 
-    // Ordered list
-    if (/^\d+\.\s/.test(trimmed)) {
-      const listItems: React.ReactNode[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
-        listItems.push(<li key={i}>{parseInline(lines[i].trim().replace(/^\d+\.\s/, ''))}</li>);
+      // Headings
+      if (trimmed.startsWith('### ')) {
+        elements.push(<h3 key={`h3-${i}`}>{parseInline(trimmed.slice(4))}</h3>);
         i++;
+        continue;
       }
-      elements.push(<ol key={`ol-${i}`}>{listItems}</ol>);
-      continue;
-    }
+      if (trimmed.startsWith('## ')) {
+        elements.push(<h2 key={`h2-${i}`}>{parseInline(trimmed.slice(3))}</h2>);
+        i++;
+        continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        elements.push(<h1 key={`h1-${i}`}>{parseInline(trimmed.slice(2))}</h1>);
+        i++;
+        continue;
+      }
 
-    // Empty line — paragraph break
-    if (trimmed === '') {
+      // Blockquote
+      if (trimmed.startsWith('> ')) {
+        elements.push(<blockquote key={`bq-${i}`}>{parseInline(trimmed.slice(2))}</blockquote>);
+        i++;
+        continue;
+      }
+
+      // HR
+      if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+        elements.push(<hr key={`hr-${i}`} />);
+        i++;
+        continue;
+      }
+
+      // Unordered list
+      if (/^[-*+]\s/.test(trimmed)) {
+        const listItems: React.ReactNode[] = [];
+        while (i < lines.length && /^[-*+]\s/.test(lines[i].trim())) {
+          listItems.push(<li key={i}>{parseInline(lines[i].trim().slice(2))}</li>);
+          i++;
+        }
+        elements.push(<ul key={`ul-${i}`}>{listItems}</ul>);
+        continue;
+      }
+
+      // Ordered list
+      if (/^\d+\.\s/.test(trimmed)) {
+        const listItems: React.ReactNode[] = [];
+        while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+          listItems.push(<li key={i}>{parseInline(lines[i].trim().replace(/^\d+\.\s/, ''))}</li>);
+          i++;
+        }
+        elements.push(<ol key={`ol-${i}`}>{listItems}</ol>);
+        continue;
+      }
+
+      // Empty line — paragraph break
+      if (trimmed === '') {
+        i++;
+        continue;
+      }
+
+      // Plain paragraph
+      elements.push(<p key={`p-${i}`}>{parseInline(trimmed)}</p>);
       i++;
-      continue;
     }
 
-    // Plain paragraph
-    elements.push(<p key={`p-${i}`}>{parseInline(trimmed)}</p>);
-    i++;
+    return <div className="md-content">{elements}</div>;
+  } catch (err) {
+    console.warn('Render markdown fallback:', err);
+    return <div className="md-content"><p>{text}</p></div>;
   }
-
-  return <div className="md-content">{elements}</div>;
 }
 
 // ─── PDF Viewer ─────────────────────────────────────────────────────
@@ -568,15 +573,8 @@ export default function App() {
     if (!noteToAnalyze.content) return;
     setIsAnalyzingNoteId(noteToAnalyze.id);
     try {
-      const model = MODELS.find(m => m.id === chatModelId);
-      if (!model) return;
-      const status = await LlmInference.getStatus();
-      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
-        await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
-      }
-      const prompt = `<|system|>
-You are an Academic Task Extraction Engine. Read the note text below carefully and extract EVERY individual task mentioned. DO NOT use generic placeholders like "Task title" or "Subtask 1".
-<|user|>
+      const prompt = `You are an Academic Task Extraction Engine. Read the note text below carefully and extract EVERY individual task mentioned. DO NOT use generic placeholders like "Task title" or "Subtask 1".
+
 NOTE:
 "${noteToAnalyze.content}"
 
@@ -595,10 +593,9 @@ Extract each task as JSON format:
   ]
 }
 Category choices: Assignment, Exam, Project, Research, Placement, Portfolio, Personal.
-Priority choices: Critical, High, Medium, Low.
-<|assistant|>`;
+Priority choices: Critical, High, Medium, Low.`;
 
-      const result = await LlmInference.generateResponse({ prompt });
+      const result = await runAiInference(prompt);
       const rawText = (result.response || '').trim().replace(/```json/gi, '').replace(/```/g, '').trim();
 
       let extractedList: ExtractedTask[] = [];
@@ -738,37 +735,47 @@ Priority choices: Critical, High, Medium, Low.
 
   const fetchWebSearch = async (company: string, role: string): Promise<string> => {
     const expandedRole = expandRoleAbbreviation(role);
-    const roleQuery = `${expandedRole} engineer role at ${company} skills requirements responsibilities interview`;
+    if (!company.trim() || !role.trim() || role.trim() === '.' || role.trim().length < 2) {
+      return `Invalid target role or company ("${company}" / "${role}"). Please enter a specific company and job title (e.g. Google, Software Engineer).`;
+    }
+
+    const query = `${expandedRole} at ${company} job requirements skills responsibilities`;
+
+    // 1. Live DuckDuckGo HTML Web Search via CORS proxy
     try {
-      const ddgUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(roleQuery)}`)}`;
-      const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(5000) });
+      const ddgUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`)}`;
+      const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(6000) });
       if (res.ok) {
         const htmlText = await res.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlText, 'text/html');
-        const snippets = Array.from(doc.querySelectorAll('.result__snippet'))
-          .map(el => el.textContent?.trim())
-          .filter(s => s && s.length > 20)
-          .slice(0, 4);
+        const matches = [...htmlText.matchAll(/<a class="result__snippet[^">]*>([\s\S]*?)<\/a>/gi)];
+        const snippets = matches
+          .map(m => m[1].replace(/<[^>]+>/g, '').trim())
+          .filter(s => s && s.length > 25);
+
         if (snippets.length > 0) {
-          return `${expandedRole} at ${company} — Search Results:\n${snippets.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+          return `### Web Search Results for ${expandedRole} at ${company}:\n\n` +
+            snippets.slice(0, 4).map((s, idx) => `**${idx + 1}.** ${s}`).join('\n\n');
         }
       }
-    } catch (e) { console.warn('DDG HTML search failed:', e); }
+    } catch (e) {
+      console.warn('Live DDG search proxy timeout or error:', e);
+    }
+
+    // 2. Live Wikipedia REST API for company overview & tech focus
     try {
-      const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(roleQuery)}&format=json`, { signal: AbortSignal.timeout(4000) });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.AbstractText && data.AbstractText.length > 30) {
-          return `${expandedRole} Role: ${data.AbstractText}`;
+      const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(company.trim())}`;
+      const wikiRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(4000) });
+      if (wikiRes.ok) {
+        const data = await wikiRes.json();
+        if (data.extract && data.extract.length > 40) {
+          return `### Wikipedia Company Overview for ${company}:\n${data.extract}\n\n*Target Role Requirements:* ${expandedRole}`;
         }
       }
-    } catch (e) { console.warn('DDG JSON API failed:', e); }
-    return `${expandedRole} Role Requirements at ${company}:
-1. Proficiency in relevant programming languages, algorithms, data structures, and system design.
-2. Hands-on project experience demonstrating engineering depth and problem-solving impact.
-3. Familiarity with ${company}'s tech stack, coding standards, CI/CD pipelines, and agile workflows.
-4. Strong communication skills and ability to collaborate across cross-functional teams.`;
+    } catch (e) {
+      console.warn('Wikipedia API lookup error:', e);
+    }
+
+    return `No live web search results could be retrieved for "${expandedRole}" at "${company}". Please verify your target company name or network connection.`;
   };
 
   const handleAnalyzeJobMatch = async () => {
@@ -824,19 +831,8 @@ Evaluation: [your 2 sentence evaluation here]
 1. [first specific improvement]
 2. [second specific improvement]
 3. [third specific improvement]`;
-      const status = await LlmInference.getStatus();
-      const model = MODELS.find(m => m.id === chatModelId);
-      if (!model) throw new Error('Active model not found.');
-      const modelState = modelStates[chatModelId];
-      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-      if (!isDownloaded) throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Models tab first.`);
-      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
-        triggerAlert(`Loading ${model.name} into RAM...`, 'info');
-        const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
-        if (!loadResult.loaded) throw new Error('Failed to load local model.');
-      }
-      triggerAlert(`Analyzing match locally using ${model.name}...`, 'info');
-      const result = await LlmInference.generateResponse({ prompt: analysisPrompt });
+      triggerAlert(`Analyzing match using ${cloudSettings.useCloud ? 'Cloud API' : 'local AI'}...`, 'info');
+      const result = await runAiInference(analysisPrompt);
       const analysisResultText = result.response || '';
       let fitAnalysis = '';
       const suggestions: string[] = [];
@@ -908,18 +904,8 @@ ATS EVALUATION: <2 sentences>
 SUGGESTION 1: <advice>
 SUGGESTION 2: <advice>
 SUGGESTION 3: <advice>`;
-      const status = await LlmInference.getStatus();
-      const model = MODELS.find(m => m.id === chatModelId);
-      if (!model) throw new Error('Active model not found.');
-      const modelState = modelStates[chatModelId];
-      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-      if (!isDownloaded) throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Models tab first.`);
-      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
-        triggerAlert(`Loading ${model.name} into RAM...`, 'info');
-        const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu: false });
-        if (!loadResult.loaded) throw new Error('Failed to load local model.');
-      }
-      const result = await LlmInference.generateResponse({ prompt: atsPrompt });
+      triggerAlert(`Running ATS compatibility analysis (${cloudSettings.useCloud ? 'Cloud API' : 'Local AI'})...`, 'info');
+      const result = await runAiInference(atsPrompt);
       const rawResponse = result.response || '';
       let feedback = '';
       const suggestions: string[] = [];
@@ -1040,6 +1026,26 @@ SUGGESTION 3: <advice>`;
     triggerAlert('Profile saved locally.', 'success');
   };
 
+  // Auto-ingest profile skills & resume into local RAG vector store
+  useEffect(() => {
+    const ingestUserData = async () => {
+      const profileText = `Student Profile:\nName: ${studentProfile.name}\nCourse: ${studentProfile.course}\nSkills: ${studentProfile.skills}\nBio: ${studentProfile.bio}`;
+      await ragService.ingestNote('profile_context', 'Student Profile & Skills', profileText);
+
+      if (studentProfile.resumeData) {
+        try {
+          const text = await extractTextFromResume(studentProfile.resumeData);
+          if (text) {
+            await ragService.ingestResume(text);
+          }
+        } catch (e) {
+          console.warn('Resume RAG auto-ingest:', e);
+        }
+      }
+    };
+    ingestUserData();
+  }, [studentProfile.name, studentProfile.skills, studentProfile.course, studentProfile.resumeData]);
+
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1096,6 +1102,77 @@ SUGGESTION 3: <advice>`;
     }
   };
 
+  // ─── Cloud AI Settings ───────────────────────────────────────────
+  const [cloudSettings, setCloudSettings] = useState<{
+    useCloud: boolean;
+    baseUrl: string;
+    apiKey: string;
+    modelId: string;
+  }>(() => {
+    const saved = localStorage.getItem('acro_cloud_ai_settings');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {
+      useCloud: false,
+      baseUrl: 'https://api.groq.com/openai/v1',
+      apiKey: '',
+      modelId: 'llama-3.3-70b-versatile'
+    };
+  });
+
+  const runAiInference = async (promptText: string): Promise<{ response: string; tokenCount: number; timeMs: number; isCloud: boolean }> => {
+    if (cloudSettings.useCloud) {
+      if (!cloudSettings.apiKey || !cloudSettings.apiKey.trim()) {
+        throw new Error('Cloud AI is enabled, but API key is missing. Please enter your API key in Profile settings.');
+      }
+      const startTime = Date.now();
+      const endpoint = `${cloudSettings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+      const cleanPrompt = promptText.replace(/<start_of_turn>user\n?/g, '').replace(/<end_of_turn>\n?/g, '').replace(/<start_of_turn>model\n?/g, '').trim();
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cloudSettings.apiKey.trim()}`
+        },
+        body: JSON.stringify({
+          model: cloudSettings.modelId.trim() || 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: cleanPrompt }],
+          temperature: 0.7
+        })
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Cloud API Error (${res.status}): ${errText}`);
+      }
+
+      const data = await res.json();
+      const response = data?.choices?.[0]?.message?.content || '';
+      const tokenCount = data?.usage?.total_tokens || Math.round(response.split(/\s+/).length * 1.3);
+      const timeMs = Date.now() - startTime;
+      return { response, tokenCount, timeMs, isCloud: true };
+    } else {
+      const status = await LlmInference.getStatus();
+      const model = MODELS.find(m => m.id === chatModelId);
+      if (!model) throw new Error('Active local model not found.');
+      const modelState = modelStates[chatModelId];
+      const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
+      if (!isDownloaded) throw new Error(`Model "${model.name}" is not downloaded. Please download it from the AI Models tab or enable Cloud API mode in Profile.`);
+
+      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
+        triggerAlert(`Loading ${model.name} into device RAM...`, 'info');
+        const useGpu = chatModelId === 'gemma-2b-it-gpu-int4' && gpuDelegateEnabled;
+        const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu });
+        if (!loadResult.loaded) throw new Error('Failed to load local model into RAM.');
+      }
+
+      const res = await LlmInference.generateResponse({ prompt: promptText });
+      return { response: res.response || '', tokenCount: res.tokenCount || 0, timeMs: res.timeMs || 1000, isCloud: false };
+    }
+  };
+
   // ─── Hardware toggles ─────────────────────────────────────────────
   const [npuEnabled, setNpuEnabled] = useState<boolean>(true);
   const [gpuDelegateEnabled, setGpuDelegateEnabled] = useState<boolean>(true);
@@ -1114,37 +1191,44 @@ SUGGESTION 3: <advice>`;
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
+      let duration = 0.2;
+
       if (type === 'click') {
         osc.type = 'sine'; osc.frequency.setValueAtTime(600, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.08, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.15);
-        osc.start(); osc.stop(ctx.currentTime + 0.15);
+        duration = 0.15;
       } else if (type === 'success') {
         osc.type = 'sine'; osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.12, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
-        osc.start(); osc.stop(ctx.currentTime + 0.35);
+        duration = 0.35;
       } else if (type === 'ping') {
         osc.type = 'triangle'; osc.frequency.setValueAtTime(500, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.25);
         gain.gain.setValueAtTime(0.05, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.25);
-        osc.start(); osc.stop(ctx.currentTime + 0.25);
+        duration = 0.25;
       } else if (type === 'error') {
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(110, ctx.currentTime + 0.3);
         gain.gain.setValueAtTime(0.1, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.35);
-        osc.start(); osc.stop(ctx.currentTime + 0.35);
+        duration = 0.35;
       } else if (type === 'delete') {
         osc.type = 'triangle'; osc.frequency.setValueAtTime(300, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
         gain.gain.setValueAtTime(0.08, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.2);
-        osc.start(); osc.stop(ctx.currentTime + 0.2);
+        duration = 0.2;
       }
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+      setTimeout(() => {
+        try { ctx.close(); } catch (e) {}
+      }, Math.round((duration + 0.1) * 1000));
     } catch (e) { console.warn('Audio synthesis failed:', e); }
   };
 
@@ -1341,14 +1425,6 @@ SUGGESTION 3: <advice>`;
   // ─── Chat message handler ─────────────────────────────────────────
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
-    const model = MODELS.find(m => m.id === chatModelId);
-    if (!model) { triggerAlert('Selected model not found.', 'error'); return; }
-    const modelState = modelStates[chatModelId];
-    const isDownloaded = modelState && (modelState.status === 'installed' || modelState.status === 'loaded');
-    if (!isDownloaded) {
-      triggerAlert(`${model.name} is not downloaded. Please download it first from the AI Models tab.`, 'error');
-      return;
-    }
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       sender: 'user',
@@ -1360,69 +1436,65 @@ SUGGESTION 3: <advice>`;
     setIsTyping(true);
     playSynthSound('click');
     try {
-      const status = await LlmInference.getStatus();
-      if (!status.isLoaded || status.loadedModelId !== chatModelId) {
-        triggerAlert(`Loading ${model.name} into device RAM...`, 'info');
-        const useGpu = chatModelId === 'gemma-2b-it-gpu-int4' && gpuDelegateEnabled;
-        const loadResult = await LlmInference.loadModel({ modelId: chatModelId, fileName: model.fileName, useGpu });
-        if (!loadResult.loaded) throw new Error('Failed to load model into RAM.');
-        triggerAlert(`${model.name} loaded. Running inference...`, 'info');
-      }
-      const profileContext = [
-        studentProfile.name ? `Name: ${studentProfile.name}` : null,
-        studentProfile.course ? `Studying: ${studentProfile.course}` : null,
-        studentProfile.skills ? `Skills: ${studentProfile.skills}` : null,
-        studentProfile.bio ? `Bio: ${studentProfile.bio}` : null,
-      ].filter(Boolean).join('\n');
-      const ragChunks = await ragService.queryRAGContext(userMessage.text, 3);
-      const ragStats = ragService.getVectorStoreStats();
-      let augmentedPrompt: string;
-      if (profileContext || ragChunks.length > 0) {
-        const ragContextText = ragChunks.length > 0
-          ? ragChunks.map((c, i) => `[${c.source} - chunk ${i + 1}]: ${c.content.substring(0, 250)}`).join('\n\n')
-          : ragStats.totalChunks === 0
-            ? 'No resume or notes uploaded yet.'
-            : 'No closely relevant chunks for this query.';
-        augmentedPrompt = `You are Acro AI, a personal AI assistant for a student. You have full access to their profile, resume, and notes below. Use this information to answer their question directly and personally.
+      const profileContext = `Student Profile:
+Name: ${studentProfile.name || 'Student'}
+Course: ${studentProfile.course || 'Computer Science'}
+Skills: ${studentProfile.skills || 'Software Engineering, AI'}
+Bio: ${studentProfile.bio || ''}`;
 
-STUDENT PROFILE:
-${profileContext || 'Profile not set.'}
+      const ragChunks = await ragService.queryRAGContext(userMessage.text, 5);
 
-RESUME & NOTES CONTEXT (${ragStats.totalChunks} total chunks in vector DB):
-${ragContextText}
-
-STUDENT'S QUESTION: ${userMessage.text}
-
-Answer directly and personally using the student's profile and context above. Do not say you cannot access their data — you already have it above.`;
+      let contextSection = '';
+      if (ragChunks.length > 0) {
+        contextSection = ragChunks.map((c, i) => `[Context Chunk ${i + 1} - ${c.source}]:\n${c.content}`).join('\n\n');
       } else {
-        augmentedPrompt = userMessage.text;
+        contextSection = `Known Student Skills & Profile:\n${studentProfile.skills}\n${studentProfile.course}`;
       }
-      const result = await LlmInference.generateResponse({ prompt: augmentedPrompt });
-      const timeSec = result.timeMs / 1000;
-      const tokPerSec = result.tokenCount > 0 ? (result.tokenCount / timeSec).toFixed(1) : null;
+
+      const augmentedPrompt = `<start_of_turn>user
+System Instructions: You are Acro AI, a helpful personal AI assistant. Below is the student's profile, technical background, and retrieved vector database context. Use this information to answer their question directly, personally, and accurately.
+
+=== STUDENT PROFILE ===
+${profileContext}
+
+=== RETRIEVED CONTEXT FROM VECTOR DATABASE ===
+${contextSection}
+
+=== STUDENT QUESTION ===
+${userMessage.text}
+
+Answer the student's question directly using the profile and context above.
+<end_of_turn>
+<start_of_turn>model
+`;
+
+      const result = await runAiInference(augmentedPrompt);
+      const responseText = result && typeof result.response === 'string' ? result.response : 'No response generated.';
+      const timeSec = (result?.timeMs || 1000) / 1000;
+      const tokPerSec = (result?.tokenCount || 0) > 0 ? ((result.tokenCount) / timeSec).toFixed(1) : null;
       const modelMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'model',
-        text: result.response || 'No response generated.',
+        text: responseText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         stats: {
           speed: tokPerSec ? `${tokPerSec} tok/s` : '',
           time: `${timeSec.toFixed(1)}s`,
-          hardware: `On-Device (${chatModelId.includes('gpu') ? 'GPU' : 'CPU'})`
+          hardware: result.isCloud ? `Cloud API (${cloudSettings.modelId})` : `On-Device (${chatModelId.includes('gpu') ? 'GPU' : 'CPU'})`
         }
       };
       setChatMessages(prev => [...prev, modelMessage]);
       playSynthSound('success');
     } catch (err: any) {
-      console.error('On-device inference error:', err);
+      console.error('AI inference error:', err);
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'model',
-        text: `On-device inference failed: ${err.message || 'Unknown error'}. Make sure the model is fully downloaded and try again.`,
+        text: `AI inference failed: ${err.message || 'Unknown error'}. Make sure your AI settings/models are configured properly.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setChatMessages(prev => [...prev, errorMessage]);
-      triggerAlert('Local inference failed. Check model file integrity.', 'error');
+      triggerAlert(`Inference failed: ${err.message}`, 'error');
     } finally {
       setIsTyping(false);
     }
@@ -1466,7 +1538,7 @@ Answer directly and personally using the student's profile and context above. Do
             onClick={() => { playSynthSound('click'); setActiveTab('home'); }}
             aria-label="Go to Home"
           >
-            <img src="/acro-logo.png" alt="Acro Logo" className="brand-logo" />
+            <img src="/logo.png" alt="Acro Logo" className="brand-logo" />
             <div>
               <div className="brand-name">Acro</div>
               <div className="brand-tag">AI Suite</div>
@@ -2062,6 +2134,96 @@ Answer directly and personally using the student's profile and context above. Do
               </div>
             )}
           </div>
+
+          {/* Cloud AI API Settings */}
+          <div className="profile-section">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-4)', paddingBottom: 'var(--sp-3)', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <h3 className="profile-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>Cloud AI API Integration</h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: '2px 0 0 0' }}>Bypass local RAM models & execute all features via Cloud API</p>
+              </div>
+              <span className={`badge ${cloudSettings.useCloud ? 'badge-green' : 'badge-neutral'}`}>
+                {cloudSettings.useCloud ? 'Cloud API Active' : 'Local On-Device'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--sp-3)', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+                <div>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-1)', display: 'block' }}>Enable Cloud API Mode</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>When enabled, no on-device AI RAM models will be loaded. All tasks use the API below.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSynthSound('click');
+                    setCloudSettings(prev => ({ ...prev, useCloud: !prev.useCloud }));
+                  }}
+                  style={{
+                    width: '46px', height: '26px', borderRadius: '13px',
+                    background: cloudSettings.useCloud ? 'var(--accent)' : 'var(--border-strong)',
+                    border: 'none', position: 'relative', cursor: 'pointer', flexShrink: 0
+                  }}
+                >
+                  <span style={{
+                    width: '20px', height: '20px', borderRadius: '50%', background: 'white',
+                    position: 'absolute', top: '3px',
+                    left: cloudSettings.useCloud ? '23px' : '3px',
+                    transition: 'left 0.2s'
+                  }} />
+                </button>
+              </div>
+
+              {cloudSettings.useCloud && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">API Base URL</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={cloudSettings.baseUrl}
+                      onChange={e => setCloudSettings({ ...cloudSettings, baseUrl: e.target.value })}
+                      placeholder="https://api.groq.com/openai/v1"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">API Key</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      value={cloudSettings.apiKey}
+                      onChange={e => setCloudSettings({ ...cloudSettings, apiKey: e.target.value })}
+                      placeholder="gsk_... or sk-..."
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Cloud Model ID</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={cloudSettings.modelId}
+                      onChange={e => setCloudSettings({ ...cloudSettings, modelId: e.target.value })}
+                      placeholder="llama-3.3-70b-versatile"
+                    />
+                  </div>
+                </>
+              )}
+
+              <button
+                className="btn btn-primary"
+                style={{ alignSelf: 'flex-start' }}
+                onClick={() => {
+                  localStorage.setItem('acro_cloud_ai_settings', JSON.stringify(cloudSettings));
+                  playSynthSound('success');
+                  triggerAlert(`Saved AI Settings. Active Mode: ${cloudSettings.useCloud ? 'Cloud API' : 'Local On-Device'}.`, 'success');
+                }}
+              >
+                <FloppyDisk size={15} weight="bold" /> Save AI API Settings
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2113,7 +2275,11 @@ Answer directly and personally using the student's profile and context above. Do
               <div className="chat-header-info">
                 <div className="chat-header-name">Acro AI</div>
                 <div className="chat-header-status">
-                  {isChatModelInstalled ? `${MODELS.find(m => m.id === chatModelId)?.name} · On-device` : 'No model loaded'}
+                  {cloudSettings.useCloud
+                    ? `${cloudSettings.modelId || 'Cloud Model'} · Cloud API`
+                    : isChatModelInstalled
+                      ? `${MODELS.find(m => m.id === chatModelId)?.name} · On-device`
+                      : 'No model loaded'}
                 </div>
               </div>
               {/* Model selector pill */}
@@ -2197,7 +2363,7 @@ Answer directly and personally using the student's profile and context above. Do
                     <Robot size={13} weight="fill" />
                   </div>
                 )}
-                <div>
+                <div className="msg-content-wrap">
                   <div className="msg-bubble">
                     {msg.sender === 'model'
                       ? renderMarkdown(msg.text)
