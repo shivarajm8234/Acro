@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Cpu, 
-  Download, 
-  RefreshCw, 
-  Trash2, 
-  Play, 
-  Pause, 
-  Eye, 
-  EyeOff, 
-  Check, 
+import {
+  Cpu,
+  Download,
+  RefreshCw,
+  Trash2,
+  Play,
+  Pause,
+  Eye,
+  EyeOff,
+  Check,
   CheckCircle,
   Tv,
   MessageSquare,
@@ -30,9 +30,21 @@ import {
   Search,
   Award,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  Lock,
+  Plus,
+  StickyNote
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+
+interface AppLockPluginType {
+  isAccessibilityEnabled(): Promise<{ enabled: boolean }>;
+  openAccessibilitySettings(): Promise<void>;
+  getInstalledApps(): Promise<{ apps: Array<{ packageName: string; appName: string; icon: string; endTimeMs: number; isBlocked: boolean }> }>;
+  setAppLock(options: { packageName: string; duration: number; unit: string }): Promise<{ success: boolean; endTimeMs: number }>;
+}
+
+const AppLock = registerPlugin<AppLockPluginType>('AppLock');
 
 // Configure pdfjs worker for native canvas PDF rendering
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -163,7 +175,7 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
         const pdf = await loadingTask.promise;
         if (isCancelled) return;
         setNumPages(pdf.numPages);
-        
+
         const page = await pdf.getPage(currentPage);
         if (isCancelled) return;
 
@@ -201,8 +213,8 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
       <canvas ref={canvasRef} style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', borderRadius: '4px', background: '#ffffff' }} />
       {numPages > 1 && (
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem', color: '#334155' }}>
-          <button 
-            disabled={currentPage <= 1} 
+          <button
+            disabled={currentPage <= 1}
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             className="btn btn-secondary"
             style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
@@ -210,8 +222,8 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
             Prev
           </button>
           <span>Page {currentPage} of {numPages}</span>
-          <button 
-            disabled={currentPage >= numPages} 
+          <button
+            disabled={currentPage >= numPages}
             onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
             className="btn btn-secondary"
             style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
@@ -230,8 +242,118 @@ export default function App() {
   const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
 
   // Tab navigation states
-  const [activeTab, setActiveTab] = useState<'downloader' | 'animly' | 'profile' | 'placement'>('downloader');
+  const [activeTab, setActiveTab] = useState<'home' | 'downloader' | 'animly' | 'profile' | 'placement'>('home');
   const [isIframeLoading, setIsIframeLoading] = useState<boolean>(true);
+
+  // Notepad State
+  const [notes, setNotes] = useState<Array<{ id: string; title: string; content: string; date: string }>>(() => {
+    const saved = localStorage.getItem('acro_notepad_notes');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { }
+    }
+    return [
+      { id: '1', title: 'Daily Study Goals', content: '1. Complete AI model integration.\n2. Review computer architecture notes.', date: new Date().toLocaleDateString() }
+    ];
+  });
+  const [isAddNoteOpen, setIsAddNoteOpen] = useState<boolean>(false);
+  const [newNoteTitle, setNewNoteTitle] = useState<string>('');
+  const [newNoteContent, setNewNoteContent] = useState<string>('');
+
+  // App Lock (Shakle logic) States
+  const [isLockModalOpen, setIsLockModalOpen] = useState<boolean>(false);
+  const [isLoadingApps, setIsLoadingApps] = useState<boolean>(false);
+  const [lockingPackage, setLockingPackage] = useState<string | null>(null);
+  const [installedApps, setInstalledApps] = useState<Array<{ packageName: string; appName: string; icon: string; endTimeMs: number; isBlocked: boolean }>>([]);
+  const [appSearchQuery, setAppSearchQuery] = useState<string>('');
+  const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState<boolean>(false);
+  const [customDurations, setCustomDurations] = useState<{ [pkg: string]: string }>({});
+  const [customUnits, setCustomUnits] = useState<{ [pkg: string]: 'MINUTES' | 'HOURS' | 'DAYS' | 'INFINITE' }>({});
+  const [currentTimeTick, setCurrentTimeTick] = useState<number>(Date.now());
+
+  useEffect(() => {
+    localStorage.setItem('acro_notepad_notes', JSON.stringify(notes));
+  }, [notes]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTimeTick(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchInstalledApps = async () => {
+    setIsLoadingApps(true);
+    try {
+      const accRes = await AppLock.isAccessibilityEnabled();
+      setIsAccessibilityEnabled(accRes.enabled);
+      const res = await AppLock.getInstalledApps();
+      setInstalledApps(res.apps || []);
+    } catch (err) {
+      console.warn('AppLock plugin check failed:', err);
+    } finally {
+      setIsLoadingApps(false);
+    }
+  };
+
+  const handleOpenLockModal = async () => {
+    playSynthSound('click');
+    setIsLockModalOpen(true);
+    await fetchInstalledApps();
+  };
+
+  const handleStartAppLock = async (packageName: string) => {
+    playSynthSound('click');
+    const unit = customUnits[packageName] || 'MINUTES';
+    let duration = 0;
+    if (unit !== 'INFINITE') {
+      duration = parseFloat(customDurations[packageName] || '0');
+      if (isNaN(duration) || duration <= 0) {
+        triggerAlert('Please enter a valid lock duration amount.', 'error');
+        return;
+      }
+    }
+
+    setLockingPackage(packageName);
+    try {
+      const res = await AppLock.setAppLock({ packageName, duration, unit });
+      // Optimistically update local list for zero UI lag
+      setInstalledApps(prev => prev.map(app => {
+        if (app.packageName === packageName) {
+          return { ...app, isBlocked: true, endTimeMs: res.endTimeMs };
+        }
+        return app;
+      }));
+      triggerAlert(`App locked successfully!`, 'success');
+      playSynthSound('success');
+    } catch (err: any) {
+      triggerAlert(`Lock failed: ${err.message}`, 'error');
+    } finally {
+      setLockingPackage(null);
+    }
+  };
+
+  const handleAddNote = () => {
+    if (!newNoteTitle.trim() && !newNoteContent.trim()) {
+      triggerAlert('Please enter a title or content for your note.', 'error');
+      return;
+    }
+    playSynthSound('success');
+    const newNote = {
+      id: Date.now().toString(),
+      title: newNoteTitle.trim() || 'Untitled Note',
+      content: newNoteContent.trim(),
+      date: new Date().toLocaleDateString()
+    };
+    setNotes([newNote, ...notes]);
+    setNewNoteTitle('');
+    setNewNoteContent('');
+    setIsAddNoteOpen(false);
+  };
+
+  const handleDeleteNote = (id: string) => {
+    playSynthSound('delete');
+    setNotes(notes.filter(n => n.id !== id));
+  };
 
   // Placement Hub states
   const [companyName, setCompanyName] = useState<string>('');
@@ -354,11 +476,11 @@ export default function App() {
     playSynthSound('click');
     try {
       const enableSearch = window.confirm("Would you like to search the web for real-time company info & role requirements? (If Cancel, local AI model knowledge will be used.)");
-      
+
       // 1. Extract text from resume
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
-      
+
       // 2. Perform Web Search optionally
       let searchResults = "Use local AI knowledge for requirements of this role.";
       if (enableSearch) {
@@ -373,10 +495,10 @@ export default function App() {
       triggerAlert('Analyzing match with AI...', 'info');
 
       // Strict truncation to fit in MediaPipe context limits
-      const maxTextChars = 800; 
+      const maxTextChars = 800;
       const truncatedResumeText = resumeText.substring(0, maxTextChars) + (resumeText.length > maxTextChars ? '... [truncated]' : '');
       const truncatedSearchResults = searchResults.substring(0, maxTextChars) + (searchResults.length > maxTextChars ? '... [truncated]' : '');
-      
+
       const analysisPrompt = `
 You are an expert technical recruiter. Analyze if the student's profile and resume matches the requirements of the job role.
 
@@ -512,42 +634,30 @@ Return ONLY valid JSON.
         throw new Error('Unable to extract text content from your resume PDF.');
       }
 
-      // 2. Perform AI ATS analysis
-      triggerAlert('Analyzing ATS compatibility...', 'info');
+      // 2. Perform Multi-step local AI ATS analysis (pipeline technique for small LLMs)
+      triggerAlert('Step 1/2: Extracting resume skills & keywords with local AI...', 'info');
 
-      const maxAtsChars = 1000;
-      const truncatedResume = resumeText.substring(0, maxAtsChars) + (resumeText.length > maxAtsChars ? '... [truncated]' : '');
+      const maxAtsChars = 2000; // Increased context window
+      const truncatedResume = resumeText.substring(0, maxAtsChars);
 
-      const atsPrompt = `
-You are an advanced ATS (Applicant Tracking System) scanner. Scan the following resume text and evaluate its score.
+      // Step 1: Text extraction prompt without JSON structure constraints
+      const step1Prompt = `<|system|>
+You are an expert ATS (Applicant Tracking System) reviewer.
+<|user|>
+Analyze the candidate's resume content below:
 
 RESUME TEXT:
 ${truncatedResume}
 
-STUDENT PROFILE DATA:
-- Skills listed in profile: ${studentProfile.skills}
+STUDENT PROFILE SKILLS:
+${studentProfile.skills || 'Not specified'}
 
-TASK:
-1. Provide an ATS compatibility score out of 100 based on structure, length, formatting, content quality, and profile alignment.
-2. Provide a general feedback summary.
-3. List 3-5 smart recommendations/suggestions to improve the resume for ATS parsers.
-4. Extract 5-10 key professional keywords found in the resume.
-5. Identify 3-5 missing keywords or core skills that are highly relevant to their profile but missing in the resume text.
+Perform the following:
+1. List all technical skills, frameworks, languages, and tools found in the resume.
+2. List 3-5 important industry skills or certifications missing from the resume.
+3. Write a concise 2-sentence assessment of the resume's formatting and content quality.
+<|assistant|>`;
 
-FORMAT YOUR RESPONSE IN CLEAR JSON FORMAT matching this pattern:
-{
-  "score": 78,
-  "feedback": "Your resume has a strong foundation but lacks key elements...",
-  "suggestions": [
-    "Add more metrics/numbers to achievements",
-    "Include a dedicated certifications section"
-  ],
-  "keywordsFound": ["React", "Python", "Machine Learning"],
-  "keywordsMissing": ["Docker", "CI/CD", "TypeScript"]
-}
-Return ONLY valid JSON.
-`;
-      let atsResultText = '';
       const status = await LlmInference.getStatus();
       const model = MODELS.find(m => m.id === chatModelId);
       if (!model) {
@@ -572,68 +682,90 @@ Return ONLY valid JSON.
       }
 
       triggerAlert(`Running ATS compatibility analysis locally using ${model.name}...`, 'info');
-      const result = await LlmInference.generateResponse({ prompt: atsPrompt });
-      atsResultText = result.response;
-      // Local dynamic ATS calculator to prevent hardcoding
-      const sectionsList = ['education', 'experience', 'skills', 'projects', 'certifications', 'summary', 'languages'];
-      const foundSections = sectionsList.filter(sec => new RegExp(`\\b${sec}\\b`, 'i').test(resumeText));
-      const sectionScore = (foundSections.length / 5) * 40; // max 40 points
-      
-      const wordsCount = resumeText.split(/\s+/).filter(Boolean).length;
-      const lengthScore = wordsCount >= 150 && wordsCount <= 900 ? 30 : wordsCount > 900 ? 20 : 10; // max 30 points
 
-      const profileSkills = studentProfile.skills.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-      const matchedSkills = profileSkills.filter(skill => resumeText.toLowerCase().includes(skill));
-      const skillsScore = profileSkills.length > 0 ? (matchedSkills.length / profileSkills.length) * 30 : 20; // max 30 points
-      const calculatedAtsScore = Math.max(35, Math.min(98, Math.round(sectionScore + lengthScore + skillsScore)));
+      const step1Result = await LlmInference.generateResponse({ prompt: step1Prompt });
+      const rawAnalysis = (step1Result.response || '').trim();
 
-      let parsed: {
-        score: number;
-        feedback: string;
-        suggestions: string[];
-        keywordsFound: string[];
-        keywordsMissing: string[];
-      } = {
-        score: calculatedAtsScore,
-        feedback: atsResultText || 'Analysis completed.',
-        suggestions: [],
-        keywordsFound: matchedSkills.length > 0 ? matchedSkills : (studentProfile.skills ? studentProfile.skills.split(',') : ['Analytics']),
-        keywordsMissing: []
-      };
-      try {
-        const jsonMatch = atsResultText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsedJson = JSON.parse(jsonMatch[0]);
-          if (parsedJson.score) parsed.score = parsedJson.score;
-          if (parsedJson.feedback) parsed.feedback = parsedJson.feedback;
-          if (parsedJson.suggestions) parsed.suggestions = parsedJson.suggestions;
-          if (parsedJson.keywordsFound) parsed.keywordsFound = parsedJson.keywordsFound;
-          if (parsedJson.keywordsMissing) parsed.keywordsMissing = parsedJson.keywordsMissing;
-        } else {
-          // Regex match extraction of score from text output
-          const scoreMatch = atsResultText.match(/(?:score|rating|result)\s*[:\-]?\s*(\d+)%?/i) || atsResultText.match(/(\d+)%/);
-          if (scoreMatch) {
-            parsed.score = parseInt(scoreMatch[1]);
-          }
+      triggerAlert('Step 2/2: Formatting ATS scoring & recommendations...', 'info');
+
+      // Step 2: Formatter prompt converting raw analysis into structured output
+      const step2Prompt = `<|system|>
+You are a data formatting assistant. Convert the evaluation notes below into a clean, strictly formatted output.
+<|user|>
+EVALUATION NOTES:
+${rawAnalysis}
+
+Respond ONLY in this format:
+SCORE: [numeric 0-100]
+FEEDBACK: [1-2 sentence feedback]
+SUGGESTION 1: [actionable advice]
+SUGGESTION 2: [actionable advice]
+SUGGESTION 3: [actionable advice]
+KEYWORDS FOUND: [comma-separated skills]
+KEYWORDS MISSING: [comma-separated missing skills]
+<|assistant|>`;
+
+      const step2Result = await LlmInference.generateResponse({ prompt: step2Prompt });
+      const structuredOutput = (step2Result.response || '').trim();
+
+      // Robust Key-Value Parser for step 2 output
+      let score = 75;
+      let feedback = '';
+      const suggestions: string[] = [];
+      let keywordsFound: string[] = [];
+      let keywordsMissing: string[] = [];
+
+      const lines = structuredOutput.split('\n');
+      for (const line of lines) {
+        const cleanLine = line.trim();
+        if (/^SCORE:/i.test(cleanLine)) {
+          const match = cleanLine.match(/\d+/);
+          if (match) score = parseInt(match[0], 10);
+        } else if (/^FEEDBACK:/i.test(cleanLine)) {
+          feedback = cleanLine.replace(/^FEEDBACK:/i, '').trim();
+        } else if (/^SUGGESTION\s*\d*:/i.test(cleanLine)) {
+          const sug = cleanLine.replace(/^SUGGESTION\s*\d*:/i, '').trim();
+          if (sug) suggestions.push(sug);
+        } else if (/^KEYWORDS FOUND:/i.test(cleanLine)) {
+          const kws = cleanLine.replace(/^KEYWORDS FOUND:/i, '').trim();
+          if (kws) keywordsFound = kws.split(',').map(k => k.trim()).filter(Boolean);
+        } else if (/^KEYWORDS MISSING:/i.test(cleanLine)) {
+          const kws = cleanLine.replace(/^KEYWORDS MISSING:/i, '').trim();
+          if (kws) keywordsMissing = kws.split(',').map(k => k.trim()).filter(Boolean);
         }
-      } catch (e) {
-        console.warn('ATS AI did not return valid JSON, using raw parsing...', e);
+      }
       }
 
-      // Fill in lists if empty
-      if (parsed.suggestions.length === 0) {
-        const bulletPoints = atsResultText.split('\n')
-          .map(line => line.trim())
-          .filter(line => line.startsWith('-') || line.startsWith('*'))
-          .map(line => line.substring(1).trim());
-        parsed.suggestions = bulletPoints.length > 0 ? bulletPoints : ['Ensure standard headers like Education and Skills are present.', 'Add metrics and impact numbers to experience details.'];
+      // Fallback parser if key-value labels weren't returned by step 2
+      if (!feedback && rawAnalysis) {
+        feedback = rawAnalysis.split('\n').filter(l => l.trim().length > 15)[0] || 'Resume analysis completed.';
       }
-      if (parsed.keywordsMissing.length === 0) {
-        const standardTechKeywords = ['Docker', 'CI/CD', 'Git', 'Cloud Computing', 'SQL', 'TypeScript', 'System Design'];
-        parsed.keywordsMissing = standardTechKeywords.filter(kw => !resumeText.toLowerCase().includes(kw.toLowerCase())).slice(0, 3);
+      if (suggestions.length === 0 && rawAnalysis) {
+        const bullets = rawAnalysis.split('\n').filter(l => /^[0-9-•*]/.test(l.trim()));
+        bullets.forEach(b => suggestions.push(b.replace(/^[0-9-•*\s]+/, '').trim()));
       }
 
-      setAtsResult(parsed);
+      // Extract skills dynamically from text if AI step 2 missed comma list
+      if (keywordsFound.length === 0) {
+        const userSkillsList = (studentProfile.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+        keywordsFound = userSkillsList.filter(s => resumeText.toLowerCase().includes(s.toLowerCase()));
+        if (keywordsFound.length === 0) keywordsFound = ['Resume Content', 'Technical Profile'];
+      }
+
+      if (keywordsMissing.length === 0) {
+        const userSkillsList = (studentProfile.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+        keywordsMissing = userSkillsList.filter(s => !resumeText.toLowerCase().includes(s.toLowerCase()));
+        if (keywordsMissing.length === 0) keywordsMissing = ['Quantifiable Metrics', 'Industry Certifications'];
+      }
+
+      setAtsResult({
+        score: Math.min(100, Math.max(0, score)),
+        feedback: feedback || 'Resume scanned successfully with local AI model.',
+        suggestions: suggestions.length > 0 ? suggestions : ['Include measurable metrics in project descriptions.'],
+        keywordsFound,
+        keywordsMissing
+      });
+
       playSynthSound('success');
       triggerAlert('ATS compatibility analysis completed!', 'success');
     } catch (err: any) {
@@ -693,7 +825,7 @@ Return ONLY valid JSON.
   }>(() => {
     const saved = localStorage.getItem('acro_student_profile');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
+      try { return JSON.parse(saved); } catch (e) { }
     }
     return {
       name: 'Alex Rivera',
@@ -798,7 +930,7 @@ Return ONLY valid JSON.
     try {
       playSynthSound('click');
       const filename = studentProfile.resumeName || 'Student_Resume.pdf';
-      
+
       // Convert base64 data URL to Blob for WebView download compatibility
       const parts = studentProfile.resumeData.split(';base64,');
       const contentType = parts[0].replace('data:', '');
@@ -810,7 +942,7 @@ Return ONLY valid JSON.
       }
       const blob = new Blob([uInt8Array], { type: contentType });
       const blobUrl = URL.createObjectURL(blob);
-      
+
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = blobUrl;
@@ -850,7 +982,7 @@ Return ONLY valid JSON.
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
+
       osc.connect(gain);
       gain.connect(ctx.destination);
 
@@ -929,7 +1061,7 @@ Return ONLY valid JSON.
         }
       }
       setModelStates(states);
-      
+
       try {
         const nativeStorage = await ModelDownloader.getFreeStorage();
         if (nativeStorage && nativeStorage.freeBytes > 0) {
@@ -957,7 +1089,7 @@ Return ONLY valid JSON.
   useEffect(() => {
     const listener = (ModelDownloader as any).addListener('downloadProgress', (data: any) => {
       const { modelId, status, downloadedBytes, progress, error } = data;
-      
+
       setModelStates(prev => ({
         ...prev,
         [modelId]: {
@@ -1000,7 +1132,7 @@ Return ONLY valid JSON.
   const refreshStorage = async () => {
     playSynthSound('click');
     setIsRefreshingStorage(true);
-    
+
     try {
       // 1. Native Android Storage API call (exact real-time StatFs disk space)
       const nativeStorage = await ModelDownloader.getFreeStorage();
@@ -1112,7 +1244,7 @@ Return ONLY valid JSON.
   // Load Model into RAM
   const loadModelToRam = (modelId: string) => {
     playSynthSound('click');
-    
+
     // Unload any loaded model first
     setModelStates(prev => {
       const updated = { ...prev };
@@ -1137,7 +1269,7 @@ Return ONLY valid JSON.
         if (loadProgress >= 100) {
           clearInterval(interval);
           playSynthSound('ping');
-          triggerAlert(`🚀 LiteRT warm-up completed. ${MODELS.find(m=>m.id===modelId)?.name} active in RAM.`, 'success');
+          triggerAlert(`🚀 LiteRT warm-up completed. ${MODELS.find(m => m.id === modelId)?.name} active in RAM.`, 'success');
           return {
             ...prev,
             [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
@@ -1292,11 +1424,11 @@ Return ONLY valid JSON.
 
       {/* Header */}
       <header>
-        <div 
-          className="brand" 
+        <div
+          className="brand"
           onClick={() => {
             playSynthSound('click');
-            setActiveTab('downloader');
+            setActiveTab('home');
           }}
           style={{ cursor: 'pointer' }}
           title="Return to Home Screen"
@@ -1309,40 +1441,7 @@ Return ONLY valid JSON.
         </div>
 
         <div className="header-actions">
-          <button 
-            className={`btn btn-sm ${activeTab === 'downloader' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              playSynthSound('click');
-              setActiveTab('downloader');
-            }}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            Home
-          </button>
-          
-          <button 
-            className={`btn btn-sm ${activeTab === 'animly' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              playSynthSound('click');
-              setActiveTab('animly');
-            }}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            Animly
-          </button>
-
-          <button 
-            className={`btn btn-sm ${activeTab === 'placement' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => {
-              playSynthSound('click');
-              setActiveTab('placement');
-            }}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            Placement Hub
-          </button>
-
-          <button 
+          <button
             className={`profile-btn-header ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => {
               playSynthSound('click');
@@ -1355,275 +1454,324 @@ Return ONLY valid JSON.
         </div>
       </header>
 
-      {/* Main Panel grid */}
-      {activeTab === 'downloader' && (
+      {/* Home Tab Panel (Notepad & App Focus Lock) */}
+      {activeTab === 'home' && (
         <div className="dashboard-grid">
-        
-        {/* Banner Section: Disk Space */}
-        <div className="storage-banner">
-          <div className="storage-info">
-            <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
-            <span className="storage-value">{formatBytes(availableStorage)}</span>
+
+          {/* Notepad Header Controls */}
+          <div className="notepad-section-header">
+            <div className="notepad-title-group">
+              <StickyNote size={22} className="notepad-icon" />
+              <div>
+                <h2>My Quick Notes</h2>
+                <span className="notepad-subtitle">Personal Study Pad & App Focus Controller</span>
+              </div>
+            </div>
+            <button className="lock-apps-btn" onClick={handleOpenLockModal} title="Focus Lock Apps">
+              <Lock size={16} />
+              <span>Lock Apps</span>
+            </button>
           </div>
-          <button 
-            className="btn btn-secondary" 
-            onClick={refreshStorage} 
-            disabled={isRefreshingStorage}
-          >
-            <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
-            <span>Refresh Disk Space</span>
+
+          {/* Notes Grid */}
+          <div className="notepad-grid">
+            {notes.length === 0 ? (
+              <div className="notepad-empty-state">
+                <StickyNote size={36} style={{ opacity: 0.3 }} />
+                <p>No notes added yet. Click the <strong>+</strong> button below to create your first note!</p>
+              </div>
+            ) : (
+              notes.map((note) => (
+                <div key={note.id} className="note-card">
+                  <div className="note-card-header">
+                    <h3 className="note-card-title">{note.title}</h3>
+                    <button className="note-delete-btn" onClick={() => handleDeleteNote(note.id)} title="Delete Note">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <p className="note-card-content">{note.content}</p>
+                  <span className="note-card-date">{note.date}</span>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Floating Plus Button for Adding Notes */}
+          <button className="add-note-fab" onClick={() => { playSynthSound('click'); setIsAddNoteOpen(true); }} title="Add New Note">
+            <Plus size={24} />
           </button>
         </div>
+      )}
 
-        {/* Token Card */}
-        <div className="card-panel token-card">
-          <div>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
-              HUGGING FACE ACCESS TOKEN (SECURED)
-            </h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-              Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
-            </p>
-          </div>
+      {/* AI Models Downloader Tab */}
+      {activeTab === 'downloader' && (
+        <div className="dashboard-grid">
 
-          <div className="input-row">
-            <input 
-              type={isTokenVisible ? 'text' : 'password'}
-              className="text-input"
-              value={hfToken}
-              onChange={(e) => {
-                setHfToken(e.target.value);
-                setIsTokenSaved(false);
-              }}
-              placeholder="hf_••••••••••••••••••••••••••••••••"
-            />
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => {
-                playSynthSound('click');
-                setIsTokenVisible(!isTokenVisible);
-              }}
-              style={{ padding: '0.5rem' }}
-              title={isTokenVisible ? 'Hide Key' : 'Show Key'}
+          {/* Banner Section: Disk Space */}
+          <div className="storage-banner">
+            <div className="storage-info">
+              <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
+              <span className="storage-value">{formatBytes(availableStorage)}</span>
+            </div>
+            <button
+              className="btn btn-secondary"
+              onClick={refreshStorage}
+              disabled={isRefreshingStorage}
             >
-              {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <button className="btn btn-primary" onClick={saveToken}>
-              {isTokenSaved ? 'Saved ✓' : 'Save Key'}
+              <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
+              <span>Refresh Disk Space</span>
             </button>
           </div>
-        </div>
 
-        {/* Models list section */}
-        <div>
-          <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
-            {MODELS.map(model => {
-              const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
-              const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
-              const isDownloading = state.status === 'downloading';
-              const isVerifying = state.status === 'verifying';
-              const isLoading = state.status === 'loading';
-              const isLoaded = state.status === 'loaded';
+          {/* Token Card */}
+          <div className="card-panel token-card">
+            <div>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
+                HUGGING FACE ACCESS TOKEN (SECURED)
+              </h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
+              </p>
+            </div>
 
-              return (
-                <div key={model.id} className="card-panel model-card">
-                  <div className="model-header">
-                    <div className="model-meta-box">
-                      <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
-                        <Cpu size={20} />
-                      </div>
-                      <div className="model-title-box">
-                        <span className="model-name">{model.name}</span>
-                        <span className="model-details">{model.architecture} • {model.displaySize}</span>
-                      </div>
-                    </div>
+            <div className="input-row">
+              <input
+                type={isTokenVisible ? 'text' : 'password'}
+                className="text-input"
+                value={hfToken}
+                onChange={(e) => {
+                  setHfToken(e.target.value);
+                  setIsTokenSaved(false);
+                }}
+                placeholder="hf_••••••••••••••••••••••••••••••••"
+              />
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  playSynthSound('click');
+                  setIsTokenVisible(!isTokenVisible);
+                }}
+                style={{ padding: '0.5rem' }}
+                title={isTokenVisible ? 'Hide Key' : 'Show Key'}
+              >
+                {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              <button className="btn btn-primary" onClick={saveToken}>
+                {isTokenSaved ? 'Saved ✓' : 'Save Key'}
+              </button>
+            </div>
+          </div>
 
-                    <div>
-                      {isLoaded ? (
-                        <span className="badge badge-green">Active in RAM</span>
-                      ) : isInstalled ? (
-                        <span className="badge badge-blue">Installed Local</span>
-                      ) : null}
-                    </div>
-                  </div>
+          {/* Models list section */}
+          <div>
+            <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+              {MODELS.map(model => {
+                const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
+                const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
+                const isDownloading = state.status === 'downloading';
+                const isVerifying = state.status === 'verifying';
+                const isLoading = state.status === 'loading';
+                const isLoaded = state.status === 'loaded';
 
-                  <p className="model-description">{model.description}</p>
-
-                  {/* Progressive loading state into RAM */}
-                  {isLoading && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
-                        <span>{state.progress}%</span>
-                      </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Downloading status */}
-                  {isDownloading && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)' }}>
-                          Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
-                        </span>
-                        <span>{state.progress}%</span>
-                      </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
-                      </div>
-                      <button 
-                        className="btn btn-secondary" 
-                        onClick={() => cancelDownload(model.id)}
-                        style={{ marginTop: '0.4rem', padding: '0.35rem' }}
-                      >
-                        Abort Download
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Verifying hash integrity */}
-                  {isVerifying && (
-                    <div className="progress-container">
-                      <div className="progress-header">
-                        <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
-                          Registering model & verifying SHA-256 integrity...
-                        </span>
-                      </div>
-                      <div className="progress-bar-bg">
-                        <div className="progress-bar-fill indeterminate"></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action Buttons based on status */}
-                  {!isDownloading && !isVerifying && !isLoading && (
-                    <div style={{ marginTop: '0.25rem' }}>
-                      {!isInstalled ? (
-                        <button 
-                          className="btn btn-primary" 
-                          onClick={() => startDownload(model.id)}
-                          style={{ width: '100%' }}
-                        >
-                          <Download size={14} />
-                          Download Model ({model.displaySize})
-                        </button>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          {isLoaded ? (
-                            <button 
-                              className="btn btn-secondary" 
-                              onClick={() => unloadModelFromRam(model.id)}
-                              style={{ flex: 1 }}
-                            >
-                              <Pause size={14} /> Unload from RAM
-                            </button>
-                          ) : (
-                            <button 
-                              className="btn btn-primary" 
-                              onClick={() => loadModelToRam(model.id)}
-                              style={{ flex: 1 }}
-                            >
-                              <Play size={14} /> Load Model into RAM
-                            </button>
-                          )}
-                          <button 
-                            className="btn-icon-only btn-danger" 
-                            onClick={() => deleteModel(model.id)}
-                            title="Delete model binary file"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                return (
+                  <div key={model.id} className="card-panel model-card">
+                    <div className="model-header">
+                      <div className="model-meta-box">
+                        <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
+                          <Cpu size={20} />
                         </div>
-                      )}
+                        <div className="model-title-box">
+                          <span className="model-name">{model.name}</span>
+                          <span className="model-details">{model.architecture} • {model.displaySize}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        {isLoaded ? (
+                          <span className="badge badge-green">Active in RAM</span>
+                        ) : isInstalled ? (
+                          <span className="badge badge-blue">Installed Local</span>
+                        ) : null}
+                      </div>
                     </div>
-                  )}
+
+                    <p className="model-description">{model.description}</p>
+
+                    {/* Progressive loading state into RAM */}
+                    {isLoading && (
+                      <div className="progress-container">
+                        <div className="progress-header">
+                          <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
+                          <span>{state.progress}%</span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Downloading status */}
+                    {isDownloading && (
+                      <div className="progress-container">
+                        <div className="progress-header">
+                          <span style={{ color: 'var(--color-indigo)' }}>
+                            Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
+                          </span>
+                          <span>{state.progress}%</span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                        </div>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => cancelDownload(model.id)}
+                          style={{ marginTop: '0.4rem', padding: '0.35rem' }}
+                        >
+                          Abort Download
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Verifying hash integrity */}
+                    {isVerifying && (
+                      <div className="progress-container">
+                        <div className="progress-header">
+                          <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
+                            Registering model & verifying SHA-256 integrity...
+                          </span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill indeterminate"></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons based on status */}
+                    {!isDownloading && !isVerifying && !isLoading && (
+                      <div style={{ marginTop: '0.25rem' }}>
+                        {!isInstalled ? (
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => startDownload(model.id)}
+                            style={{ width: '100%' }}
+                          >
+                            <Download size={14} />
+                            Download Model ({model.displaySize})
+                          </button>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {isLoaded ? (
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => unloadModelFromRam(model.id)}
+                                style={{ flex: 1 }}
+                              >
+                                <Pause size={14} /> Unload from RAM
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-primary"
+                                onClick={() => loadModelToRam(model.id)}
+                                style={{ flex: 1 }}
+                              >
+                                <Play size={14} /> Load Model into RAM
+                              </button>
+                            )}
+                            <button
+                              className="btn-icon-only btn-danger"
+                              onClick={() => deleteModel(model.id)}
+                              title="Delete model binary file"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Hardware Acceleration & OAuth Toggles */}
+          <div>
+            <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
+            <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
+              <div className="toggle-row">
+                <div className="toggle-meta">
+                  <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
+                  <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Hardware Acceleration & OAuth Toggles */}
-        <div>
-          <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
-          <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
-                <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={npuEnabled}
+                    onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
+                  />
+                  <span className="slider-switch"></span>
+                </label>
               </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={npuEnabled}
-                  onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
 
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">OpenCL GPU Delegate</span>
-                <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
+              <div className="toggle-row">
+                <div className="toggle-meta">
+                  <span className="toggle-label">OpenCL GPU Delegate</span>
+                  <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={gpuDelegateEnabled}
+                    onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
+                  />
+                  <span className="slider-switch"></span>
+                </label>
               </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={gpuDelegateEnabled}
-                  onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
 
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">Gmail / Outlook Sync Integration</span>
-                <span className="toggle-desc">Realtime background index of contextual emails.</span>
+              <div className="toggle-row">
+                <div className="toggle-meta">
+                  <span className="toggle-label">Gmail / Outlook Sync Integration</span>
+                  <span className="toggle-desc">Realtime background index of contextual emails.</span>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={gmailSync}
+                    onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
+                  />
+                  <span className="slider-switch"></span>
+                </label>
               </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={gmailSync}
-                  onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
 
-            <div className="toggle-row">
-              <div className="toggle-meta">
-                <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
-                <span className="toggle-desc">Maintains automated git integrations.</span>
+              <div className="toggle-row">
+                <div className="toggle-meta">
+                  <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
+                  <span className="toggle-desc">Maintains automated git integrations.</span>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={githubSync}
+                    onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
+                  />
+                  <span className="slider-switch"></span>
+                </label>
               </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={githubSync}
-                  onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
-                />
-                <span className="slider-switch"></span>
-              </label>
-            </div>
 
-            <div className="toggle-row" style={{ paddingBottom: 0 }}>
-              <div className="toggle-meta">
-                <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
-                <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
-              </div>
-              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
-                <CheckCircle size={14} /> Active
+              <div className="toggle-row" style={{ paddingBottom: 0 }}>
+                <div className="toggle-meta">
+                  <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
+                  <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
+                  <CheckCircle size={14} /> Active
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-      </div>
+        </div>
       )}
 
 
@@ -1634,13 +1782,13 @@ Return ONLY valid JSON.
           {isIframeLoading && (
             <div className="iframe-loader">
               <div className="iframe-loader-spinner"></div>
-              <span className="iframe-loader-text">Loading Animly Engine...</span>
+              <span className="iframe-loader-text">Loading Acro Engine...</span>
             </div>
           )}
-          <iframe 
-            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`} 
-            className="iframe-web" 
-            title="Animly Web Application"
+          <iframe
+            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`}
+            className="iframe-web"
+            title="Acro Learn Web Application"
             onLoad={() => setIsIframeLoading(false)}
           />
         </div>
@@ -1655,7 +1803,17 @@ Return ONLY valid JSON.
 
       {/* Bottom Navigation Bar */}
       <nav className="bottom-nav">
-        <button 
+        <button
+          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
+          onClick={() => {
+            playSynthSound('click');
+            setActiveTab('home');
+          }}
+        >
+          <StickyNote size={20} />
+          <span>Home</span>
+        </button>
+        <button
           className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1663,9 +1821,9 @@ Return ONLY valid JSON.
           }}
         >
           <Cpu size={20} />
-          <span>AI Downloader</span>
+          <span>AI Models</span>
         </button>
-        <button 
+        <button
           className={`nav-item ${activeTab === 'animly' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1674,9 +1832,9 @@ Return ONLY valid JSON.
           }}
         >
           <Tv size={20} />
-          <span>Animly Web</span>
+          <span>Acro Learn</span>
         </button>
-        <button 
+        <button
           className={`nav-item ${activeTab === 'placement' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1686,7 +1844,7 @@ Return ONLY valid JSON.
           <Briefcase size={20} />
           <span>Placement Hub</span>
         </button>
-        <button 
+        <button
           className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1698,7 +1856,7 @@ Return ONLY valid JSON.
         </button>
       </nav>
 
-      <button 
+      <button
         className={`chatbot-fab ${isChatOpen ? 'chat-open' : ''}`}
         onClick={() => {
           playSynthSound('click');
@@ -1716,7 +1874,7 @@ Return ONLY valid JSON.
           {/* Chat Header */}
           <div className="chat-header">
             <div className="model-selector-container">
-              <button 
+              <button
                 className="model-selector-btn"
                 onClick={() => setIsDropdownOpen(prev => !prev)}
               >
@@ -1761,7 +1919,7 @@ Return ONLY valid JSON.
                     );
                   })}
                   <div className="dropdown-divider"></div>
-                  <button 
+                  <button
                     className="extended-thinking-item"
                     onClick={() => {
                       playSynthSound('click');
@@ -1778,7 +1936,7 @@ Return ONLY valid JSON.
               )}
             </div>
 
-            <button 
+            <button
               className="chat-close-btn"
               onClick={() => {
                 playSynthSound('click');
@@ -1803,7 +1961,7 @@ Return ONLY valid JSON.
                     }
                     return <div key={idx}>{line}</div>;
                   })}
-                  
+
                   {/* Basic Code block simulator inside chats */}
                   {msg.text.includes('```python') && (
                     <pre>
@@ -1824,7 +1982,7 @@ Return ONLY valid JSON.
                 </div>
               </div>
             ))}
-            
+
             {/* Typing indicator */}
             {isTyping && (
               <div className="chat-message-row model">
@@ -1844,7 +2002,7 @@ Return ONLY valid JSON.
               return (
                 <div className="chat-warning-banner">
                   <span>⚠️ Download this model to enable on-device AI inference (no internet needed).</span>
-                  <button 
+                  <button
                     className="chat-warning-link"
                     onClick={() => {
                       playSynthSound('click');
@@ -1862,7 +2020,7 @@ Return ONLY valid JSON.
 
           {/* Chat Input Bar */}
           <div className="chat-input-container">
-            <button 
+            <button
               className="chat-mic-btn"
               onClick={() => {
                 playSynthSound('click');
@@ -1872,8 +2030,8 @@ Return ONLY valid JSON.
             >
               <Mic size={18} />
             </button>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="chat-text-input"
               placeholder={modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded' ? "Ask anything (on-device)..." : "Download model first..."}
               value={chatInput}
@@ -1885,7 +2043,7 @@ Return ONLY valid JSON.
               }}
               disabled={!(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
             />
-            <button 
+            <button
               className="chat-send-btn"
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || isTyping || !(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
@@ -1902,8 +2060,8 @@ Return ONLY valid JSON.
       {activeTab === 'placement' && (
         <div className="placement-page-container">
           <div className="profile-page-header">
-            <button 
-              className="btn btn-secondary back-nav-btn" 
+            <button
+              className="btn btn-secondary back-nav-btn"
               onClick={() => {
                 playSynthSound('click');
                 setActiveTab('downloader');
@@ -1922,7 +2080,7 @@ Return ONLY valid JSON.
               <AlertTriangle size={48} className="error-card-icon" />
               <h3>Resume Not Uploaded</h3>
               <p>You must upload your resume in PDF format in your profile before you can use the Placement Hub analytics and ATS checker features.</p>
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={() => {
                   playSynthSound('click');
@@ -1947,23 +2105,23 @@ Return ONLY valid JSON.
                 <div className="placement-form">
                   <div className="form-group">
                     <label>Target Company</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Google, Stripe, Microsoft" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Google, Stripe, Microsoft"
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                     />
                   </div>
                   <div className="form-group">
                     <label>Job Role</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Frontend Engineer, ML Engineer" 
+                    <input
+                      type="text"
+                      placeholder="e.g. Frontend Engineer, ML Engineer"
                       value={jobRole}
                       onChange={(e) => setJobRole(e.target.value)}
                     />
                   </div>
-                  <button 
+                  <button
                     className="btn btn-primary analyze-btn"
                     onClick={handleAnalyzeJobMatch}
                     disabled={isAnalyzingMatch}
@@ -2035,7 +2193,7 @@ Return ONLY valid JSON.
                 </p>
 
                 <div className="ats-trigger-section">
-                  <button 
+                  <button
                     className="btn btn-secondary analyze-btn"
                     onClick={handleAnalyzeATS}
                     disabled={isAnalyzingAts}
@@ -2057,16 +2215,10 @@ Return ONLY valid JSON.
                     <div className="ats-score-display">
                       <div className="progress-circle-placeholder">
                         <span className="ats-score-num">{atsResult.score}</span>
-                        <span className="ats-score-lbl">ATS Score</span>
+                        <span className="ats-score-lbl">ATS SCORE</span>
                       </div>
                       <div className="ats-grade-text">
-                        {atsResult.score >= 80 ? (
-                          <span className="badge-grade high">Excellent Compatibility</span>
-                        ) : atsResult.score >= 60 ? (
-                          <span className="badge-grade medium">Good - Needs Improvements</span>
-                        ) : (
-                          <span className="badge-grade low">Poor ATS Parsing Match</span>
-                        )}                        <p className="ats-feedback-desc">{renderFormattedText(atsResult.feedback)}</p>
+                        <p className="ats-feedback-desc">{renderFormattedText(atsResult.feedback)}</p>
                       </div>
                     </div>
 
@@ -2110,8 +2262,8 @@ Return ONLY valid JSON.
       {activeTab === 'profile' && (
         <div className="profile-page-container">
           <div className="profile-page-header">
-            <button 
-              className="btn btn-secondary back-nav-btn" 
+            <button
+              className="btn btn-secondary back-nav-btn"
               onClick={() => {
                 playSynthSound('click');
                 setActiveTab('downloader');
@@ -2137,9 +2289,9 @@ Return ONLY valid JSON.
               )}
               <label className="avatar-edit-badge" title="Change Profile Photo">
                 <Upload size={12} />
-                <input 
-                  type="file" 
-                  accept="image/*" 
+                <input
+                  type="file"
+                  accept="image/*"
                   onChange={handleAvatarUpload}
                   style={{ display: 'none' }}
                 />
@@ -2155,12 +2307,12 @@ Return ONLY valid JSON.
           {/* Edit Profile Form */}
           <div className="profile-section">
             <h3 className="profile-section-title">Personal Details (Stored Locally)</h3>
-            
+
             <div className="form-group-row">
               <div className="form-group">
                 <label>Full Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={studentProfile.name}
                   onChange={(e) => setStudentProfile({ ...studentProfile, name: e.target.value })}
                   placeholder="Student Full Name"
@@ -2168,8 +2320,8 @@ Return ONLY valid JSON.
               </div>
               <div className="form-group">
                 <label>Student ID</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={studentProfile.studentId}
                   onChange={(e) => setStudentProfile({ ...studentProfile, studentId: e.target.value })}
                   placeholder="e.g. ACRO-2026-1024"
@@ -2179,8 +2331,8 @@ Return ONLY valid JSON.
 
             <div className="form-group">
               <label>Email Address</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 value={studentProfile.email}
                 onChange={(e) => setStudentProfile({ ...studentProfile, email: e.target.value })}
                 placeholder="student@university.edu"
@@ -2189,8 +2341,8 @@ Return ONLY valid JSON.
 
             <div className="form-group">
               <label>Course / Major</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={studentProfile.course}
                 onChange={(e) => setStudentProfile({ ...studentProfile, course: e.target.value })}
                 placeholder="Computer Science, Electronics..."
@@ -2199,8 +2351,8 @@ Return ONLY valid JSON.
 
             <div className="form-group">
               <label>Technical Skills</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={studentProfile.skills}
                 onChange={(e) => setStudentProfile({ ...studentProfile, skills: e.target.value })}
                 placeholder="Python, Java, Android, Machine Learning"
@@ -2209,7 +2361,7 @@ Return ONLY valid JSON.
 
             <div className="form-group">
               <label>Bio / Summary</label>
-              <textarea 
+              <textarea
                 rows={2}
                 value={studentProfile.bio}
                 onChange={(e) => setStudentProfile({ ...studentProfile, bio: e.target.value })}
@@ -2217,7 +2369,7 @@ Return ONLY valid JSON.
               />
             </div>
 
-            <button 
+            <button
               className="btn btn-primary save-profile-btn"
               onClick={() => {
                 playSynthSound('success');
@@ -2231,7 +2383,7 @@ Return ONLY valid JSON.
           {/* Resume Section */}
           <div className="profile-section resume-section">
             <h3 className="profile-section-title">Student Resume Document</h3>
-            
+
             {studentProfile.resumeData ? (
               <div className="resume-preview-card">
                 <div className="resume-info">
@@ -2246,7 +2398,7 @@ Return ONLY valid JSON.
                 <div className="resume-inline-viewer">
                   <div className="resume-viewer-header">
                     <span>Document Live Preview</span>
-                    <button 
+                    <button
                       className="btn btn-secondary resume-external-link"
                       onClick={() => {
                         playSynthSound('click');
@@ -2264,7 +2416,7 @@ Return ONLY valid JSON.
                 </div>
 
                 <div className="resume-actions">
-                  <button 
+                  <button
                     className="btn btn-primary resume-action-btn"
                     onClick={handleDownloadResume}
                   >
@@ -2273,15 +2425,15 @@ Return ONLY valid JSON.
 
                   <label className="btn btn-secondary resume-action-btn upload-replace-label">
                     <Upload size={14} /> Upload / Replace Resume
-                    <input 
-                      type="file" 
-                      accept=".pdf,.doc,.docx,.txt,image/*" 
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt,image/*"
                       onChange={handleResumeUpload}
                       style={{ display: 'none' }}
                     />
                   </label>
 
-                  <button 
+                  <button
                     className="btn btn-secondary resume-action-btn delete-resume-btn"
                     onClick={() => {
                       playSynthSound('delete');
@@ -2301,9 +2453,9 @@ Return ONLY valid JSON.
                 <p className="dropzone-desc">Select your resume file (PDF, DOCX, TXT, or Image)</p>
                 <label className="btn btn-primary upload-resume-btn">
                   <Upload size={16} /> Select Resume File
-                  <input 
-                    type="file" 
-                    accept=".pdf,.doc,.docx,.txt,image/*" 
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt,image/*"
                     onChange={handleResumeUpload}
                     style={{ display: 'none' }}
                   />
@@ -2324,14 +2476,14 @@ Return ONLY valid JSON.
                 <span>{studentProfile.resumeName || 'Student_Resume.pdf'}</span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button 
+                <button
                   className="btn btn-primary"
                   style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                   onClick={handleDownloadResume}
                 >
                   <Download size={14} /> Download
                 </button>
-                <button 
+                <button
                   className="modal-close-btn"
                   onClick={() => setIsFullscreenResumeOpen(false)}
                 >
@@ -2349,6 +2501,198 @@ Return ONLY valid JSON.
           </div>
         </div>
       )}
+
+      {/* Add Note Modal */}
+      {isAddNoteOpen && (
+        <div className="modal-overlay" onClick={() => setIsAddNoteOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">
+                <StickyNote size={20} className="modal-icon" />
+                <h3>Add New Note</h3>
+              </div>
+              <button className="modal-close-btn" onClick={() => setIsAddNoteOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Title</label>
+                <input
+                  type="text"
+                  placeholder="Note Title..."
+                  value={newNoteTitle}
+                  onChange={(e) => setNewNoteTitle(e.target.value)}
+                  className="text-input"
+                />
+              </div>
+              <div className="form-group">
+                <label>Content</label>
+                <textarea
+                  rows={4}
+                  placeholder="Write your note here..."
+                  value={newNoteContent}
+                  onChange={(e) => setNewNoteContent(e.target.value)}
+                  className="text-input"
+                  style={{ width: '100%', resize: 'vertical' }}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setIsAddNoteOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddNote}>Save Note</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* App Lock Modal (Shakle App Locker) */}
+      {isLockModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsLockModalOpen(false)}>
+          <div className="modal-content lock-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">
+                <Lock size={22} className="modal-icon lock-icon-theme" />
+                <div>
+                  <h3>App Focus Locker</h3>
+                  <span className="modal-subtitle">Sakle Engine • Enforced Application Blocking</span>
+                </div>
+              </div>
+              <button className="modal-close-btn" onClick={() => setIsLockModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {!isAccessibilityEnabled && (
+              <div className="accessibility-alert-banner">
+                <AlertTriangle size={20} />
+                <div style={{ flex: 1 }}>
+                  <strong>Accessibility Permission Required</strong>
+                  <p>Enable Accessibility Service for Proxims in Settings so it can enforce app locks.</p>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={async () => {
+                    await AppLock.openAccessibilitySettings();
+                  }}
+                >
+                  Enable
+                </button>
+              </div>
+            )}
+
+            <div className="app-search-bar-wrapper">
+              <Search size={18} className="search-icon" />
+              <input
+                type="text"
+                placeholder="Search installed applications..."
+                value={appSearchQuery}
+                onChange={(e) => setAppSearchQuery(e.target.value)}
+                className="app-search-input"
+              />
+            </div>
+
+            <div className="apps-list-container">
+              {isLoadingApps ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: '#64748b', gap: '0.5rem' }}>
+                  <RefreshCw size={24} className="animate-spin" />
+                  <span style={{ fontSize: '0.85rem' }}>Loading installed applications...</span>
+                </div>
+              ) : (
+                installedApps
+                  .filter(app => app.appName.toLowerCase().includes(appSearchQuery.toLowerCase()))
+                  .map(app => {
+                    const remainingMs = app.endTimeMs - currentTimeTick;
+                    const isBlocked = remainingMs > 0;
+
+                    let formattedTime = '';
+                    if (isBlocked) {
+                      if (app.endTimeMs === Long_MAX_VALUE || remainingMs > 365 * 24 * 60 * 60 * 1000) {
+                        formattedTime = 'Blocked Infinite';
+                      } else {
+                        const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+                        const hours = Math.floor((remainingMs / (1000 * 60 * 60)) % 24);
+                        const mins = Math.floor((remainingMs / (1000 * 60)) % 60);
+                        const secs = Math.floor((remainingMs / 1000) % 60);
+                        formattedTime = days > 0
+                          ? `${days}d ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`
+                          : `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} left`;
+                      }
+                    }
+
+                    const selectedUnit = customUnits[app.packageName] || 'MINUTES';
+                    const selectedDuration = customDurations[app.packageName] || '';
+                    const isItemLocking = lockingPackage === app.packageName;
+
+                    return (
+                      <div key={app.packageName} className="app-lock-item-row">
+                        <div className="app-item-info">
+                          {app.icon ? (
+                            <img src={app.icon} alt={app.appName} className="app-item-icon" />
+                          ) : (
+                            <div className="app-item-icon-fallback"><Lock size={20} /></div>
+                          )}
+                          <div className="app-item-text">
+                            <span className="app-item-name">{app.appName}</span>
+                            {isBlocked ? (
+                              <span className="app-blocked-timer">{formattedTime}</span>
+                            ) : (
+                              <span className="app-package-id">{app.packageName}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="app-lock-controls">
+                          {isBlocked ? (
+                            <span className="badge-locked">LOCKED</span>
+                          ) : (
+                            <>
+                              {selectedUnit !== 'INFINITE' && (
+                                <input
+                                  type="number"
+                                  min="1"
+                                  placeholder="Qty"
+                                  value={selectedDuration}
+                                  onChange={(e) => setCustomDurations({ ...customDurations, [app.packageName]: e.target.value })}
+                                  className="duration-input"
+                                />
+                              )}
+                              <select
+                                value={selectedUnit}
+                                onChange={(e) => setCustomUnits({ ...customUnits, [app.packageName]: e.target.value as any })}
+                                className="unit-select"
+                              >
+                                <option value="MINUTES">Mins</option>
+                                <option value="HOURS">Hours</option>
+                                <option value="DAYS">Days</option>
+                                <option value="INFINITE">Infinite</option>
+                              </select>
+                              <button
+                                className="btn btn-primary btn-lock-action"
+                                onClick={() => handleStartAppLock(app.packageName)}
+                                disabled={!isAccessibilityEnabled || (selectedUnit !== 'INFINITE' && !selectedDuration) || isItemLocking}
+                                title="Enforce App Lock"
+                              >
+                                {isItemLocking ? (
+                                  <RefreshCw size={14} className="animate-spin" />
+                                ) : (
+                                  <>
+                                    <Lock size={14} /> Lock
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+const Long_MAX_VALUE = 9223372036854775807;

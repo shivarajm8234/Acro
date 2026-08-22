@@ -1988,5 +1988,425 @@ footer {
   to { transform: rotate(360deg); }
 }
 
+/* ==========================================================================
+   Notepad & App Focus Lock (Shakle) Styling
+   ========================================================================== */
+.notepad-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  padding: 1.25rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid var(--border-light);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
+}
 
+.notepad-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
 
+.notepad-icon {
+  color: var(--color-indigo);
+  background: rgba(79, 70, 229, 0.1);
+  padding: 0.5rem;
+  box-sizing: content-box;
+  border-radius: 12px;
+}
+
+.notepad-title-group h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.notepad-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.lock-apps-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.1rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.3);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lock-apps-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(225, 29, 72, 0.4);
+}
+
+.lock-apps-btn:active {
+  transform: scale(0.96);
+}
+
+.notepad-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+
+.notepad-empty-state {
+  grid-column: 1 / -1;
+  background: #f8fafc;
+  border: 2px dashed var(--border-light);
+  border-radius: 16px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.note-card {
+  background: #fffbeb; /* Soft paper yellow / notepad feel */
+  border: 1px solid #fef08a;
+  border-radius: 14px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s;
+  min-height: 120px;
+}
+
+.note-card:hover {
+  transform: translateY(-2px);
+}
+
+.note-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.note-card-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #78350f;
+  margin: 0;
+}
+
+.note-delete-btn {
+  background: none;
+  border: none;
+  color: #b45309;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 50%;
+  opacity: 0.7;
+  transition: all 0.2s;
+}
+
+.note-delete-btn:hover {
+  opacity: 1;
+  background: #fef3c7;
+}
+
+.note-card-content {
+  font-size: 0.85rem;
+  color: #92400e;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  margin: 0.6rem 0;
+  flex: 1;
+}
+
+.note-card-date {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #b45309;
+  align-self: flex-end;
+}
+
+/* Floating Plus (FAB) for Notes */
+.add-note-fab {
+  position: fixed;
+  bottom: 85px;
+  left: 1.5rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+  cursor: pointer;
+  z-index: 1002;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.add-note-fab:hover {
+  transform: scale(1.08);
+}
+
+.add-note-fab:active {
+  transform: scale(0.92);
+}
+
+/* Modal Overlay & Lock App Dialog Styling */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 85svh;
+  animation: scaleUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lock-modal-content {
+  max-width: 540px;
+}
+
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.modal-title h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.lock-icon-theme {
+  color: #e11d48;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: #f8fafc;
+}
+
+.accessibility-alert-banner {
+  background: #fff1f2;
+  border-bottom: 1px solid #fecdd3;
+  color: #be123c;
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.app-search-bar-wrapper {
+  position: relative;
+  padding: 0.85rem 1.25rem 0.35rem 1.25rem;
+}
+
+.search-icon {
+  position: absolute;
+  left: 2rem;
+  top: 1.45rem;
+  color: var(--text-muted);
+}
+
+.app-search-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem 0.6rem 2.5rem;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  background: #f8fafc;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.app-search-input:focus {
+  background: #ffffff;
+  border-color: var(--color-indigo);
+}
+
+.apps-list-container {
+  padding: 0.5rem 1.25rem 1.25rem 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 55vh;
+}
+
+.app-lock-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-light);
+  gap: 0.75rem;
+}
+
+.app-item-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.app-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.app-item-icon-fallback {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+}
+
+.app-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-item-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-package-id {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-blocked-timer {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #e11d48;
+}
+
+.app-lock-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.duration-input {
+  width: 60px;
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.unit-select {
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  font-size: 0.75rem;
+  background: #ffffff;
+}
+
+.btn-lock-action {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+
+}
+
+.badge-locked {
+  background: #ffe4e6;
+  color: #e11d48;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.3rem 0.75rem;
+  border-radius: 99px;
+  letter-spacing: 0.04em;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
