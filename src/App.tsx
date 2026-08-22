@@ -18,7 +18,7 @@ import {
 } from '@phosphor-icons/react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Xframe } from 'capacitor-plugin-xframe';
-import { registerPlugin } from '@capacitor/core';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 import { ragService } from './services/ragService';
 import logoImg from './assets/logo.png';
 import './App.css';
@@ -848,7 +848,13 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const [previewPdfModal, setPreviewPdfModal] = useState<{ name: string; dataUrl: string } | null>(null);
+  const [previewPdfModal, setPreviewPdfModal] = useState<{
+    name: string;
+    dataUrl: string;
+    title?: string;
+    subtitle?: string;
+    body?: string;
+  } | null>(null);
   const [pdfPreviewTab, setPdfPreviewTab] = useState<'pdf' | 'text'>('pdf');
   const [selectedCopilotGroupId, setSelectedCopilotGroupId] = useState<string>('custom');
   const [selectedCopilotToolId, setSelectedCopilotToolId] = useState<string>('freestyle_custom');
@@ -1119,53 +1125,42 @@ Provide clear sections:
         aiReportSynthesis = `EXECUTIVE SUMMARY:\nSynthesis of topic: ${noteToAnalyze.title}.\nThis document presents key academic insights, benefits, and structured execution timelines extracted directly from your study notes.\n\nADVANTAGES & KEY FINDINGS:\n- Rapid information synthesis & digital archive accessibility.\n- Streamlined task breakdown with automated priority assignment.\n- Enhanced long-term retention via structured project reviews.\n\nACTIONABLE DELIVERABLES:\n1. Complete draft review.\n2. Verify course guidelines and reference material.\n3. Publish final submission to workspace portfolio.`;
       }
 
-      // Automatically generate appropriate output artifact
+      // Always generate appropriate output artifact & PDF report
       let outputArtifact: NoteItem['outputArtifact'] = undefined;
       let generatedReportObj: NoteItem['generatedPdfReport'] = undefined;
 
+      const reportTitle = `${noteToAnalyze.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_Report.pdf`;
+      const pdfContent = generateRobustPdf(
+        'ACRO ACADEMIC INTELLIGENCE REPORT',
+        `Analysis Report for: ${noteToAnalyze.title}`,
+        aiReportSynthesis
+      );
+      const base64Data = btoa(unescape(encodeURIComponent(pdfContent)));
+      const dataUrl = `data:application/pdf;base64,${base64Data}`;
+      generatedReportObj = {
+        name: reportTitle,
+        dataUrl,
+        generatedAt: new Date().toLocaleString()
+      };
+
       if (outputType === 'report' || outputType === 'pdf') {
-        const reportTitle = `${noteToAnalyze.title.replace(/[^a-zA-Z0-9_\- ]/g, '')}_Report.pdf`;
-        const pdfContent = generateRobustPdf(
-          'ACRO ACADEMIC INTELLIGENCE REPORT',
-          `Analysis Report for: ${noteToAnalyze.title}`,
-          aiReportSynthesis
-        );
-        const base64Data = btoa(unescape(encodeURIComponent(pdfContent)));
-        const dataUrl = `data:application/pdf;base64,${base64Data}`;
-        generatedReportObj = {
-          name: reportTitle,
-          dataUrl,
-          generatedAt: new Date().toLocaleString()
-        };
         outputArtifact = {
           title: `${noteToAnalyze.title} Academic Report`,
           body: aiReportSynthesis,
           dataUrl
         };
-
-        // Auto trigger download notification & file save without requiring button click
-        // try {
-        //   const a = document.createElement('a');
-        //   a.style.display = 'none';
-        //   a.href = dataUrl;
-        //   a.download = reportTitle;
-        //   a.target = '_blank';
-        //   document.body.appendChild(a);
-        //   a.click();
-        //   setTimeout(() => { document.body.removeChild(a); }, 1000);
-        // } catch (e) {
-        //   console.warn('Auto download error:', e);
-        // }
       } else if (outputType === 'image') {
         outputArtifact = {
           title: `Visual Concept for ${noteToAnalyze.title}`,
           body: aiReportSynthesis,
-          mediaUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="100%" height="100%" fill="%23f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="16" fill="%232563eb">AI Concept Diagram: ' + encodeURIComponent(noteToAnalyze.title) + '</text></svg>'
+          mediaUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="100%" height="100%" fill="%23f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="16" fill="%232563eb">AI Concept Diagram: ' + encodeURIComponent(noteToAnalyze.title) + '</text></svg>',
+          dataUrl
         };
       } else {
         outputArtifact = {
           title: `Smart Synthesis`,
-          body: aiReportSynthesis
+          body: aiReportSynthesis,
+          dataUrl
         };
       }
 
@@ -1270,7 +1265,14 @@ Provide only the processed, synthesized output with zero extra conversational fi
 
   const generateRobustPdf = (title: string, subtitle: string, body: string): string => {
     const escapePdfText = (text: string) => {
-      return text
+      const safeText = text
+        .replace(/[\u2018\u2019]/g, "'") // Smart single quotes
+        .replace(/[\u201c\u201d]/g, '"') // Smart double quotes
+        .replace(/[\u2013\u2014]/g, '-') // En/em dashes
+        .replace(/•/g, '-')              // Bullet points
+        .replace(/[^\x00-\x7F]/g, '');   // Strip non-ASCII
+
+      return safeText
         .replace(/\\/g, '\\\\')
         .replace(/\(/g, '\\(')
         .replace(/\)/g, '\\)')
@@ -1302,7 +1304,7 @@ Provide only the processed, synthesized output with zero extra conversational fi
         const headerText = cleanText.replace(/^#+\s+/, '');
         processedLines.push({ text: headerText, type: 'header' });
       } else if (cleanText.startsWith('* ') || cleanText.startsWith('- ')) {
-        const bulletText = '  • ' + cleanText.substring(2).trim();
+        const bulletText = '  - ' + cleanText.substring(2).trim();
         processedLines.push({ text: bulletText, type: 'bullet' });
       } else if (/^\d+\.\s+/.test(cleanText)) {
         const listText = '  ' + cleanText;
@@ -1421,7 +1423,7 @@ Provide only the processed, synthesized output with zero extra conversational fi
       const pageId = pageObjIds[i];
       const contentId = contentObjIds[i];
       const streamContent = pages[i];
-      const streamLength = streamContent.length;
+      const streamLength = new TextEncoder().encode(streamContent).length;
       
       pdf += `${pageId} 0 obj\n<< /Type /Page /Parent ${pagesTreeId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> /MediaBox [0 0 612 792] /Contents ${contentId} 0 R >>\nendobj\n`;
       pdf += `${contentId} 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamContent}\nstream_end\nendstream\nendobj\n`;
@@ -3933,7 +3935,22 @@ Answer the student's question directly using the profile and context above.
                     <button
                       className="btn btn-primary btn-xs"
                       style={{ marginTop: 'var(--sp-2)' }}
-                      onClick={() => setPreviewPdfModal(activeViewNote.generatedPdfReport || { name: `${activeViewNote.title}_Report.pdf`, dataUrl: activeViewNote.outputArtifact?.dataUrl || '' })}
+                      onClick={() => setPreviewPdfModal(
+                        activeViewNote.generatedPdfReport
+                          ? {
+                              ...activeViewNote.generatedPdfReport,
+                              title: 'ACRO ACADEMIC INTELLIGENCE REPORT',
+                              subtitle: `Analysis Report for: ${activeViewNote.title}`,
+                              body: activeViewNote.outputArtifact?.body || activeViewNote.content
+                            }
+                          : {
+                              name: `${activeViewNote.title}_Report.pdf`,
+                              dataUrl: activeViewNote.outputArtifact?.dataUrl || '',
+                              title: 'ACRO ACADEMIC INTELLIGENCE REPORT',
+                              subtitle: `Analysis Report for: ${activeViewNote.title}`,
+                              body: activeViewNote.outputArtifact?.body || activeViewNote.content
+                            }
+                      )}
                     >
                       <Eye size={13} weight="bold" /> View Generated Document
                     </button>
@@ -4086,7 +4103,16 @@ Answer the student's question directly using the profile and context above.
                           </div>
                           <button
                             className="btn btn-primary btn-xs"
-                            onClick={() => setPreviewPdfModal(activeViewNote.generatedPdfReport || null)}
+                            onClick={() => {
+                              if (activeViewNote.generatedPdfReport) {
+                                setPreviewPdfModal({
+                                  ...activeViewNote.generatedPdfReport,
+                                  title: 'ACRO ACADEMIC INTELLIGENCE REPORT',
+                                  subtitle: `Analysis Report for: ${activeViewNote.title}`,
+                                  body: activeViewNote.outputArtifact?.body || activeViewNote.content
+                                });
+                              }
+                            }}
                           >
                             <Eye size={13} weight="bold" /> View Report
                           </button>
@@ -4218,15 +4244,245 @@ Answer the student's question directly using the profile and context above.
                 </div>
 
                 {/* Tab content 1: PDF Viewer */}
-                {pdfPreviewTab === 'pdf' && previewPdfModal.dataUrl && (
-                  <div style={{ marginTop: 'var(--sp-3)', height: '380px', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                    <iframe
-                      src={previewPdfModal.dataUrl}
-                      title="PDF Preview"
-                      style={{ width: '100%', height: '100%', border: 'none' }}
-                    />
-                  </div>
-                )}
+                {pdfPreviewTab === 'pdf' && previewPdfModal.dataUrl && (() => {
+                  const getSimulatedPdfPages = (body: string) => {
+                    const rawLines = body.split('\n');
+                    const processedLines: { text: string; type: 'header' | 'bullet' | 'normal' }[] = [];
+
+                    for (const line of rawLines) {
+                      const trimmed = line.trim();
+                      if (trimmed.length === 0) {
+                        processedLines.push({ text: '', type: 'normal' });
+                        continue;
+                      }
+
+                      let cleanText = trimmed
+                        .replace(/\*\*(.*?)\*\*/g, '$1')
+                        .replace(/\*(.*?)\*/g, '$1')
+                        .replace(/__(.*?)__/g, '$1')
+                        .replace(/_(.*?)_/g, '$1')
+                        .replace(/`(.*?)`/g, '$1')
+                        .replace(/[\u2018\u2019]/g, "'")
+                        .replace(/[\u201c\u201d]/g, '"')
+                        .replace(/[\u2013\u2014]/g, '-')
+                        .replace(/•/g, '-')
+                        .replace(/[^\x00-\x7F]/g, '');
+
+                      if (cleanText.startsWith('### ') || cleanText.startsWith('## ') || cleanText.startsWith('# ')) {
+                        const headerText = cleanText.replace(/^#+\s+/, '');
+                        processedLines.push({ text: headerText, type: 'header' });
+                      } else if (cleanText.startsWith('* ') || cleanText.startsWith('- ')) {
+                        const bulletText = '  - ' + cleanText.substring(2).trim();
+                        processedLines.push({ text: bulletText, type: 'bullet' });
+                      } else if (/^\d+\.\s+/.test(cleanText)) {
+                        const listText = '  ' + cleanText;
+                        processedLines.push({ text: listText, type: 'bullet' });
+                      } else {
+                        processedLines.push({ text: cleanText, type: 'normal' });
+                      }
+                    }
+
+                    const wrappedLines: { text: string; type: 'header' | 'bullet' | 'normal' }[] = [];
+                    const maxLineLenNormal = 75;
+                    const maxLineLenBullet = 70;
+
+                    for (const item of processedLines) {
+                      if (item.text.length === 0) {
+                        wrappedLines.push({ text: '', type: 'normal' });
+                        continue;
+                      }
+
+                      let temp = item.text;
+                      const maxLen = item.type === 'bullet' ? maxLineLenBullet : maxLineLenNormal;
+
+                      let isFirst = true;
+                      while (temp.length > maxLen) {
+                        let splitIdx = temp.lastIndexOf(' ', maxLen);
+                        if (splitIdx === -1 || splitIdx < 50) {
+                          splitIdx = maxLen;
+                        }
+                        
+                        let chunk = temp.substring(0, splitIdx);
+                        if (!isFirst && item.type === 'bullet') {
+                          chunk = '    ' + chunk.trim();
+                        }
+                        wrappedLines.push({ text: chunk, type: item.type });
+                        
+                        temp = temp.substring(splitIdx).trim();
+                        isFirst = false;
+                      }
+                      if (temp.length > 0) {
+                        if (!isFirst && item.type === 'bullet') {
+                          temp = '    ' + temp.trim();
+                        }
+                        wrappedLines.push({ text: temp, type: item.type });
+                      }
+                    }
+
+                    const pages: { text: string; type: 'header' | 'bullet' | 'normal' }[][] = [];
+                    let currentPage: { text: string; type: 'header' | 'bullet' | 'normal' }[] = [];
+                    let currentY = 658;
+
+                    for (const lineObj of wrappedLines) {
+                      const isHeader = lineObj.type === 'header';
+                      const spacing = isHeader ? 22 : 15;
+
+                      if (currentY - spacing < 60) {
+                        pages.push(currentPage);
+                        currentPage = [];
+                        currentY = 715;
+                      }
+
+                      currentPage.push(lineObj);
+                      currentY -= spacing;
+                    }
+                    if (currentPage.length > 0) {
+                      pages.push(currentPage);
+                    }
+
+                    return pages;
+                  };
+
+                  return previewPdfModal.body ? (
+                    <div style={{
+                      marginTop: 'var(--sp-3)',
+                      background: 'var(--surface-3)',
+                      padding: 'var(--sp-4)',
+                      borderRadius: 'var(--r-md)',
+                      maxHeight: '440px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 'var(--sp-4)',
+                      alignItems: 'center'
+                    }}>
+                      {getSimulatedPdfPages(
+                        previewPdfModal.body || ''
+                      ).map((pageLines, pageIdx, allPages) => (
+                        <div
+                          key={pageIdx}
+                          style={{
+                            width: '100%',
+                            maxWidth: '460px',
+                            aspectRatio: '8.5 / 11',
+                            background: '#ffffff',
+                            color: '#1a1a1a',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                            borderRadius: '4px',
+                            padding: '30px 40px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            fontFamily: '"Courier New", Courier, monospace',
+                            boxSizing: 'border-box',
+                            position: 'relative'
+                          }}
+                        >
+                          {/* Page 1 Header Details */}
+                          {pageIdx === 0 && (
+                            <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+                              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#111827', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.02em' }}>
+                                {previewPdfModal.title || 'ACRO ACADEMIC INTELLIGENCE REPORT'}
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', color: '#4b5563', marginBottom: '2px' }}>
+                                <strong>Subtitle:</strong> {previewPdfModal.subtitle || 'Generated Document'}
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', color: '#4b5563', marginBottom: '8px' }}>
+                                <strong>Date:</strong> {new Date().toLocaleDateString()}
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1f2937', marginTop: '12px', borderLeft: '2px solid #2563eb', paddingLeft: '6px' }}>
+                                Content & Academic Intelligence Output:
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Page Continued Header */}
+                          {pageIdx > 0 && (
+                            <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#4b5563', marginBottom: '15px', borderBottom: '1px dashed #e2e8f0', paddingBottom: '6px' }}>
+                              {(previewPdfModal.title || 'ACRO REPORT').toUpperCase()} - Continued
+                            </div>
+                          )}
+
+                          {/* Page Lines */}
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {pageLines.map((lineObj, lineIdx) => {
+                              const isHeader = lineObj.type === 'header';
+                              return (
+                                <div
+                                  key={lineIdx}
+                                  style={{
+                                    fontSize: isHeader ? '0.75rem' : '0.625rem',
+                                    fontWeight: isHeader ? 800 : 500,
+                                    color: isHeader ? '#111827' : '#374151',
+                                    lineHeight: '1.3',
+                                    whiteSpace: 'pre-wrap',
+                                    marginTop: isHeader ? '6px' : '0px',
+                                    marginBottom: isHeader ? '2px' : '0px'
+                                  }}
+                                >
+                                  {lineObj.text}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Page Number Footer */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '15px',
+                            left: '0',
+                            right: '0',
+                            textAlign: 'center',
+                            fontSize: '0.5625rem',
+                            color: '#9ca3af',
+                            fontFamily: 'sans-serif'
+                          }}>
+                            Page {pageIdx + 1} of {allPages.length}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 'var(--sp-3)', height: '380px', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                      {Capacitor.isNativePlatform() ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--surface-3)', padding: 'var(--sp-4)', textAlign: 'center' }}>
+                          <FileText size={48} style={{ color: 'var(--text-3)', marginBottom: 'var(--sp-2)' }} />
+                          <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: 'var(--sp-2)' }}>
+                            Mobile PDF Viewer Sandbox Warning
+                          </p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', maxWidth: '280px', marginBottom: 'var(--sp-4)' }}>
+                            Android WebView blocks embedded binary rendering inside standard sandboxed frames. Please tap the Download button to open the PDF.
+                          </p>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => {
+                              try {
+                                const a = document.createElement('a');
+                                a.style.display = 'none';
+                                a.href = previewPdfModal.dataUrl;
+                                a.download = previewPdfModal.name;
+                                a.target = '_blank';
+                                document.body.appendChild(a);
+                                a.click();
+                                setTimeout(() => { document.body.removeChild(a); }, 1000);
+                                triggerAlert('Downloading PDF...', 'success');
+                              } catch (e) {
+                                triggerAlert('Download failed', 'error');
+                              }
+                            }}
+                          >
+                            Open File
+                          </button>
+                        </div>
+                      ) : (
+                        <iframe
+                          src={previewPdfModal.dataUrl}
+                          title="PDF Preview"
+                          style={{ width: '100%', height: '100%', border: 'none' }}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Tab content 2: Text summary */}
                 {pdfPreviewTab === 'text' && (
