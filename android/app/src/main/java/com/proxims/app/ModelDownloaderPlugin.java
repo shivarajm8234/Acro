@@ -243,9 +243,12 @@ public class ModelDownloaderPlugin extends Plugin {
         File publicModelFile = new File(acroPublicDir, fileName);
 
         JSObject result = new JSObject();
-        if ((modelFile.exists() && modelFile.length() > 0) || (publicModelFile.exists() && publicModelFile.length() > 0)) {
+        boolean isInternalInstalled = modelFile.exists() && modelFile.length() > 0 && modelFile.canRead();
+        boolean isPublicInstalled = publicModelFile.exists() && publicModelFile.length() > 0 && publicModelFile.canRead();
+
+        if (isInternalInstalled || isPublicInstalled) {
             result.put("status", "installed");
-            result.put("size", modelFile.exists() ? modelFile.length() : publicModelFile.length());
+            result.put("size", isInternalInstalled ? modelFile.length() : publicModelFile.length());
         } else if (tempFile.exists()) {
             result.put("status", "downloading");
             result.put("size", tempFile.length());

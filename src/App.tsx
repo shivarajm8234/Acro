@@ -2685,11 +2685,22 @@ Do not write any other text. Output only valid JSON.`;
   useEffect(() => {
     const checkAllStatuses = async () => {
       const states: Record<string, ModelState> = {};
+      let loadedModelIdFromNative = '';
+      try {
+        const infStatus = await LlmInference.getStatus();
+        if (infStatus.isLoaded) {
+          loadedModelIdFromNative = infStatus.loadedModelId;
+        }
+      } catch (e) {
+        console.warn('Failed to query native LlmInference status:', e);
+      }
+
       for (const m of MODELS) {
         try {
           const res = await ModelDownloader.getModelStatus({ modelId: m.id, fileName: m.fileName });
           if (res.status === 'installed') {
-            states[m.id] = { status: 'installed', progress: 100, downloadedBytes: res.size };
+            const isLoaded = loadedModelIdFromNative === m.id;
+            states[m.id] = { status: isLoaded ? 'loaded' : 'installed', progress: 100, downloadedBytes: res.size };
           } else if (res.status === 'downloading') {
             states[m.id] = { status: 'downloading', progress: Math.round((res.size / m.sizeBytes) * 100), downloadedBytes: res.size };
           } else {
@@ -2817,34 +2828,64 @@ Do not write any other text. Output only valid JSON.`;
     }
   };
 
-  const loadModelToRam = (modelId: string) => {
+  const loadModelToRam = async (modelId: string) => {
     playSynthSound('click');
+    const model = MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
     setModelStates(prev => {
       const updated = { ...prev };
       Object.keys(updated).forEach(key => { if (updated[key].status === 'loaded') updated[key].status = 'installed'; });
       updated[modelId] = { status: 'loading', progress: 0, downloadedBytes: updated[modelId].downloadedBytes };
       return updated;
     });
-    let loadProgress = 0;
-    const interval = setInterval(() => {
-      loadProgress += 10;
-      setModelStates(prev => {
-        if (!prev[modelId] || prev[modelId].status !== 'loading') { clearInterval(interval); return prev; }
-        if (loadProgress >= 100) {
-          clearInterval(interval);
-          playSynthSound('ping');
-          triggerAlert(`LiteRT warm-up complete. ${MODELS.find(m => m.id === modelId)?.name} active in RAM.`, 'success');
-          return { ...prev, [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes } };
-        }
-        return { ...prev, [modelId]: { status: 'loading', progress: loadProgress, downloadedBytes: prev[modelId].downloadedBytes } };
-      });
-    }, 1500);
+
+    try {
+      const useGpu = modelId === 'gemma-2b-it-gpu-int4' && gpuDelegateEnabled;
+      
+      let loadProgress = 0;
+      const interval = setInterval(() => {
+        loadProgress = Math.min(90, loadProgress + 10);
+        setModelStates(prev => {
+          if (!prev[modelId] || prev[modelId].status !== 'loading') { clearInterval(interval); return prev; }
+          return { ...prev, [modelId]: { status: 'loading', progress: loadProgress, downloadedBytes: prev[modelId].downloadedBytes } };
+        });
+      }, 300);
+
+      const res = await LlmInference.loadModel({ modelId, fileName: model.fileName, useGpu });
+      clearInterval(interval);
+
+      if (res.loaded) {
+        setModelStates(prev => ({
+          ...prev,
+          [modelId]: { status: 'loaded', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
+        }));
+        playSynthSound('ping');
+        triggerAlert(`LiteRT warm-up complete. ${model.name} active in RAM.`, 'success');
+      } else {
+        throw new Error("Native load call returned false");
+      }
+    } catch (e: any) {
+      setModelStates(prev => ({
+        ...prev,
+        [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
+      }));
+      triggerAlert(`Failed to load model: ${e.message || e}`, 'error');
+    }
   };
 
-  const unloadModelFromRam = (modelId: string) => {
+  const unloadModelFromRam = async (modelId: string) => {
     playSynthSound('click');
-    setModelStates(prev => ({ ...prev, [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes } }));
-    triggerAlert('Model memory buffers deallocated.');
+    try {
+      await LlmInference.unloadModel();
+      setModelStates(prev => ({
+        ...prev,
+        [modelId]: { status: 'installed', progress: 100, downloadedBytes: prev[modelId].downloadedBytes }
+      }));
+      triggerAlert('Model memory buffers deallocated.');
+    } catch (e: any) {
+      triggerAlert(`Failed to unload model: ${e.message || e}`, 'error');
+    }
   };
 
   const deleteModel = async (modelId: string) => {

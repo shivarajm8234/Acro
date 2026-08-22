@@ -75,7 +75,7 @@ public class LlmInferencePlugin extends Plugin {
                     // 1. Try internal "Acro" directory
                     File acroInternalDir = new File(getContext().getFilesDir(), "Acro");
                     File candidate1 = new File(acroInternalDir, fileName);
-                    if (candidate1.exists() && candidate1.length() > 0) {
+                    if (candidate1.exists() && candidate1.length() > 0 && candidate1.canRead()) {
                         resolvedModelFile = candidate1;
                     }
 
@@ -83,7 +83,7 @@ public class LlmInferencePlugin extends Plugin {
                     if (resolvedModelFile == null) {
                         File modelsInternalDir = new File(getContext().getFilesDir(), "models");
                         File candidate2 = new File(modelsInternalDir, fileName);
-                        if (candidate2.exists() && candidate2.length() > 0) {
+                        if (candidate2.exists() && candidate2.length() > 0 && candidate2.canRead()) {
                             resolvedModelFile = candidate2;
                         }
                     }
@@ -92,7 +92,7 @@ public class LlmInferencePlugin extends Plugin {
                     if (resolvedModelFile == null) {
                         File acroPublicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Acro");
                         File candidate3 = new File(acroPublicDir, fileName);
-                        if (candidate3.exists() && candidate3.length() > 0) {
+                        if (candidate3.exists() && candidate3.length() > 0 && candidate3.canRead()) {
                             resolvedModelFile = candidate3;
                         }
                     }
