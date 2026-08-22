@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Cpu,
-  Download,
-  RefreshCw,
-  Trash2,
-  Play,
-  Pause,
-  Eye,
-  EyeOff,
-  Check,
+import { 
+  Cpu, 
+  Download, 
+  RefreshCw, 
+  Trash2, 
+  Play, 
+  Pause, 
+  Eye, 
+  EyeOff, 
+  Check, 
   CheckCircle,
   Tv,
   MessageSquare,
@@ -36,6 +36,9 @@ import {
   StickyNote
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { Xframe } from 'capacitor-plugin-xframe';
+import { registerPlugin } from '@capacitor/core';
+import './App.css';
 
 interface AppLockPluginType {
   isAccessibilityEnabled(): Promise<{ enabled: boolean }>;
@@ -48,9 +51,6 @@ const AppLock = registerPlugin<AppLockPluginType>('AppLock');
 
 // Configure pdfjs worker for native canvas PDF rendering
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-import { Xframe } from 'capacitor-plugin-xframe';
-import { registerPlugin } from '@capacitor/core';
-import './App.css';
 
 interface ModelDownloaderPluginType {
   startDownload(options: { modelId: string; url: string; hfToken?: string; fileName: string; sizeBytes: number }): Promise<void>;
@@ -175,7 +175,7 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
         const pdf = await loadingTask.promise;
         if (isCancelled) return;
         setNumPages(pdf.numPages);
-
+        
         const page = await pdf.getPage(currentPage);
         if (isCancelled) return;
 
@@ -213,8 +213,8 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
       <canvas ref={canvasRef} style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', borderRadius: '4px', background: '#ffffff' }} />
       {numPages > 1 && (
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem', color: '#334155' }}>
-          <button
-            disabled={currentPage <= 1}
+          <button 
+            disabled={currentPage <= 1} 
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             className="btn btn-secondary"
             style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
@@ -222,8 +222,8 @@ function PdfCanvasViewer({ dataUrl }: { dataUrl: string }) {
             Prev
           </button>
           <span>Page {currentPage} of {numPages}</span>
-          <button
-            disabled={currentPage >= numPages}
+          <button 
+            disabled={currentPage >= numPages} 
             onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
             className="btn btn-secondary"
             style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
@@ -476,11 +476,11 @@ export default function App() {
     playSynthSound('click');
     try {
       const enableSearch = window.confirm("Would you like to search the web for real-time company info & role requirements? (If Cancel, local AI model knowledge will be used.)");
-
+      
       // 1. Extract text from resume
       triggerAlert('Extracting resume content locally...', 'info');
       const resumeText = await extractTextFromResume(studentProfile.resumeData);
-
+      
       // 2. Perform Web Search optionally
       let searchResults = "Use local AI knowledge for requirements of this role.";
       if (enableSearch) {
@@ -495,10 +495,10 @@ export default function App() {
       triggerAlert('Analyzing match with AI...', 'info');
 
       // Strict truncation to fit in MediaPipe context limits
-      const maxTextChars = 800;
+      const maxTextChars = 800; 
       const truncatedResumeText = resumeText.substring(0, maxTextChars) + (resumeText.length > maxTextChars ? '... [truncated]' : '');
       const truncatedSearchResults = searchResults.substring(0, maxTextChars) + (searchResults.length > maxTextChars ? '... [truncated]' : '');
-
+      
       const analysisPrompt = `
 You are an expert technical recruiter. Analyze if the student's profile and resume matches the requirements of the job role.
 
@@ -734,7 +734,6 @@ KEYWORDS MISSING: [comma-separated missing skills]
           if (kws) keywordsMissing = kws.split(',').map(k => k.trim()).filter(Boolean);
         }
       }
-      }
 
       // Fallback parser if key-value labels weren't returned by step 2
       if (!feedback && rawAnalysis) {
@@ -930,7 +929,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
     try {
       playSynthSound('click');
       const filename = studentProfile.resumeName || 'Student_Resume.pdf';
-
+      
       // Convert base64 data URL to Blob for WebView download compatibility
       const parts = studentProfile.resumeData.split(';base64,');
       const contentType = parts[0].replace('data:', '');
@@ -942,7 +941,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
       }
       const blob = new Blob([uInt8Array], { type: contentType });
       const blobUrl = URL.createObjectURL(blob);
-
+      
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = blobUrl;
@@ -982,7 +981,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
+      
       osc.connect(gain);
       gain.connect(ctx.destination);
 
@@ -1061,7 +1060,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
         }
       }
       setModelStates(states);
-
+      
       try {
         const nativeStorage = await ModelDownloader.getFreeStorage();
         if (nativeStorage && nativeStorage.freeBytes > 0) {
@@ -1089,7 +1088,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
   useEffect(() => {
     const listener = (ModelDownloader as any).addListener('downloadProgress', (data: any) => {
       const { modelId, status, downloadedBytes, progress, error } = data;
-
+      
       setModelStates(prev => ({
         ...prev,
         [modelId]: {
@@ -1132,7 +1131,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
   const refreshStorage = async () => {
     playSynthSound('click');
     setIsRefreshingStorage(true);
-
+    
     try {
       // 1. Native Android Storage API call (exact real-time StatFs disk space)
       const nativeStorage = await ModelDownloader.getFreeStorage();
@@ -1244,7 +1243,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
   // Load Model into RAM
   const loadModelToRam = (modelId: string) => {
     playSynthSound('click');
-
+    
     // Unload any loaded model first
     setModelStates(prev => {
       const updated = { ...prev };
@@ -1424,8 +1423,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
       {/* Header */}
       <header>
-        <div
-          className="brand"
+        <div 
+          className="brand" 
           onClick={() => {
             playSynthSound('click');
             setActiveTab('home');
@@ -1441,7 +1440,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
         </div>
 
         <div className="header-actions">
-          <button
+          <button 
             className={`profile-btn-header ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => {
               playSynthSound('click');
@@ -1470,7 +1469,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
             <button className="lock-apps-btn" onClick={handleOpenLockModal} title="Focus Lock Apps">
               <Lock size={16} />
               <span>Lock Apps</span>
-            </button>
+          </button>
           </div>
 
           {/* Notes Grid */}
@@ -1487,7 +1486,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                     <h3 className="note-card-title">{note.title}</h3>
                     <button className="note-delete-btn" onClick={() => handleDeleteNote(note.id)} title="Delete Note">
                       <X size={14} />
-                    </button>
+          </button>
                   </div>
                   <p className="note-card-content">{note.content}</p>
                   <span className="note-card-date">{note.date}</span>
@@ -1506,272 +1505,272 @@ KEYWORDS MISSING: [comma-separated missing skills]
       {/* AI Models Downloader Tab */}
       {activeTab === 'downloader' && (
         <div className="dashboard-grid">
+        
+        {/* Banner Section: Disk Space */}
+        <div className="storage-banner">
+          <div className="storage-info">
+            <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
+            <span className="storage-value">{formatBytes(availableStorage)}</span>
+          </div>
+          <button 
+            className="btn btn-secondary" 
+            onClick={refreshStorage} 
+            disabled={isRefreshingStorage}
+          >
+            <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
+            <span>Refresh Disk Space</span>
+          </button>
+        </div>
 
-          {/* Banner Section: Disk Space */}
-          <div className="storage-banner">
-            <div className="storage-info">
-              <span className="storage-title">AVAILABLE DEVICE STORAGE</span>
-              <span className="storage-value">{formatBytes(availableStorage)}</span>
-            </div>
-            <button
-              className="btn btn-secondary"
-              onClick={refreshStorage}
-              disabled={isRefreshingStorage}
+        {/* Token Card */}
+        <div className="card-panel token-card">
+          <div>
+            <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
+              HUGGING FACE ACCESS TOKEN (SECURED)
+            </h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
+            </p>
+          </div>
+
+          <div className="input-row">
+            <input 
+              type={isTokenVisible ? 'text' : 'password'}
+              className="text-input"
+              value={hfToken}
+              onChange={(e) => {
+                setHfToken(e.target.value);
+                setIsTokenSaved(false);
+              }}
+              placeholder="hf_••••••••••••••••••••••••••••••••"
+            />
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => {
+                playSynthSound('click');
+                setIsTokenVisible(!isTokenVisible);
+              }}
+              style={{ padding: '0.5rem' }}
+              title={isTokenVisible ? 'Hide Key' : 'Show Key'}
             >
-              <RefreshCw size={14} style={{ animation: isRefreshingStorage ? 'spin 1s infinite linear' : 'none' }} />
-              <span>Refresh Disk Space</span>
+              {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <button className="btn btn-primary" onClick={saveToken}>
+              {isTokenSaved ? 'Saved ✓' : 'Save Key'}
             </button>
           </div>
+        </div>
 
-          {/* Token Card */}
-          <div className="card-panel token-card">
-            <div>
-              <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-indigo)', letterSpacing: '0.04em' }}>
-                HUGGING FACE ACCESS TOKEN (SECURED)
-              </h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                Gated LLM weights like Gemma-IT require a HuggingFace read-authorized access token to bypass CDN validation.
-              </p>
-            </div>
+        {/* Models list section */}
+        <div>
+          <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+            {MODELS.map(model => {
+              const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
+              const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
+              const isDownloading = state.status === 'downloading';
+              const isVerifying = state.status === 'verifying';
+              const isLoading = state.status === 'loading';
+              const isLoaded = state.status === 'loaded';
 
-            <div className="input-row">
-              <input
-                type={isTokenVisible ? 'text' : 'password'}
-                className="text-input"
-                value={hfToken}
-                onChange={(e) => {
-                  setHfToken(e.target.value);
-                  setIsTokenSaved(false);
-                }}
-                placeholder="hf_••••••••••••••••••••••••••••••••"
-              />
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  playSynthSound('click');
-                  setIsTokenVisible(!isTokenVisible);
-                }}
-                style={{ padding: '0.5rem' }}
-                title={isTokenVisible ? 'Hide Key' : 'Show Key'}
-              >
-                {isTokenVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-              <button className="btn btn-primary" onClick={saveToken}>
-                {isTokenSaved ? 'Saved ✓' : 'Save Key'}
-              </button>
-            </div>
-          </div>
-
-          {/* Models list section */}
-          <div>
-            <span className="section-title">ON-DEVICE AI MODEL MANAGEMENT</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
-              {MODELS.map(model => {
-                const state = modelStates[model.id] || { status: 'idle', progress: 0, downloadedBytes: 0 };
-                const isInstalled = state.status === 'installed' || state.status === 'loading' || state.status === 'loaded';
-                const isDownloading = state.status === 'downloading';
-                const isVerifying = state.status === 'verifying';
-                const isLoading = state.status === 'loading';
-                const isLoaded = state.status === 'loaded';
-
-                return (
-                  <div key={model.id} className="card-panel model-card">
-                    <div className="model-header">
-                      <div className="model-meta-box">
-                        <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
-                          <Cpu size={20} />
-                        </div>
-                        <div className="model-title-box">
-                          <span className="model-name">{model.name}</span>
-                          <span className="model-details">{model.architecture} • {model.displaySize}</span>
-                        </div>
+              return (
+                <div key={model.id} className="card-panel model-card">
+                  <div className="model-header">
+                    <div className="model-meta-box">
+                      <div className={`model-icon-box ${isInstalled ? 'installed' : ''}`}>
+                        <Cpu size={20} />
                       </div>
-
-                      <div>
-                        {isLoaded ? (
-                          <span className="badge badge-green">Active in RAM</span>
-                        ) : isInstalled ? (
-                          <span className="badge badge-blue">Installed Local</span>
-                        ) : null}
+                      <div className="model-title-box">
+                        <span className="model-name">{model.name}</span>
+                        <span className="model-details">{model.architecture} • {model.displaySize}</span>
                       </div>
                     </div>
 
-                    <p className="model-description">{model.description}</p>
-
-                    {/* Progressive loading state into RAM */}
-                    {isLoading && (
-                      <div className="progress-container">
-                        <div className="progress-header">
-                          <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
-                          <span>{state.progress}%</span>
-                        </div>
-                        <div className="progress-bar-bg">
-                          <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Downloading status */}
-                    {isDownloading && (
-                      <div className="progress-container">
-                        <div className="progress-header">
-                          <span style={{ color: 'var(--color-indigo)' }}>
-                            Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
-                          </span>
-                          <span>{state.progress}%</span>
-                        </div>
-                        <div className="progress-bar-bg">
-                          <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
-                        </div>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => cancelDownload(model.id)}
-                          style={{ marginTop: '0.4rem', padding: '0.35rem' }}
-                        >
-                          Abort Download
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Verifying hash integrity */}
-                    {isVerifying && (
-                      <div className="progress-container">
-                        <div className="progress-header">
-                          <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
-                            Registering model & verifying SHA-256 integrity...
-                          </span>
-                        </div>
-                        <div className="progress-bar-bg">
-                          <div className="progress-bar-fill indeterminate"></div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action Buttons based on status */}
-                    {!isDownloading && !isVerifying && !isLoading && (
-                      <div style={{ marginTop: '0.25rem' }}>
-                        {!isInstalled ? (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => startDownload(model.id)}
-                            style={{ width: '100%' }}
-                          >
-                            <Download size={14} />
-                            Download Model ({model.displaySize})
-                          </button>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            {isLoaded ? (
-                              <button
-                                className="btn btn-secondary"
-                                onClick={() => unloadModelFromRam(model.id)}
-                                style={{ flex: 1 }}
-                              >
-                                <Pause size={14} /> Unload from RAM
-                              </button>
-                            ) : (
-                              <button
-                                className="btn btn-primary"
-                                onClick={() => loadModelToRam(model.id)}
-                                style={{ flex: 1 }}
-                              >
-                                <Play size={14} /> Load Model into RAM
-                              </button>
-                            )}
-                            <button
-                              className="btn-icon-only btn-danger"
-                              onClick={() => deleteModel(model.id)}
-                              title="Delete model binary file"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div>
+                      {isLoaded ? (
+                        <span className="badge badge-green">Active in RAM</span>
+                      ) : isInstalled ? (
+                        <span className="badge badge-blue">Installed Local</span>
+                      ) : null}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <p className="model-description">{model.description}</p>
+
+                  {/* Progressive loading state into RAM */}
+                  {isLoading && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)' }}>Initializing LiteRT Engine & Warm-up...</span>
+                        <span>{state.progress}%</span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Downloading status */}
+                  {isDownloading && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)' }}>
+                          Downloading ({formatBytes(state.downloadedBytes)} / {model.displaySize})...
+                        </span>
+                        <span>{state.progress}%</span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill" style={{ width: `${state.progress}%` }}></div>
+                      </div>
+                      <button 
+                        className="btn btn-secondary" 
+                        onClick={() => cancelDownload(model.id)}
+                        style={{ marginTop: '0.4rem', padding: '0.35rem' }}
+                      >
+                        Abort Download
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Verifying hash integrity */}
+                  {isVerifying && (
+                    <div className="progress-container">
+                      <div className="progress-header">
+                        <span style={{ color: 'var(--color-indigo)', animation: 'pulse 1s infinite' }}>
+                          Registering model & verifying SHA-256 integrity...
+                        </span>
+                      </div>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill indeterminate"></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons based on status */}
+                  {!isDownloading && !isVerifying && !isLoading && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                      {!isInstalled ? (
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={() => startDownload(model.id)}
+                          style={{ width: '100%' }}
+                        >
+                          <Download size={14} />
+                          Download Model ({model.displaySize})
+                        </button>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          {isLoaded ? (
+                            <button 
+                              className="btn btn-secondary" 
+                              onClick={() => unloadModelFromRam(model.id)}
+                              style={{ flex: 1 }}
+                            >
+                              <Pause size={14} /> Unload from RAM
+                            </button>
+                          ) : (
+                            <button 
+                              className="btn btn-primary" 
+                              onClick={() => loadModelToRam(model.id)}
+                              style={{ flex: 1 }}
+                            >
+                              <Play size={14} /> Load Model into RAM
+                            </button>
+                          )}
+                          <button 
+                            className="btn-icon-only btn-danger" 
+                            onClick={() => deleteModel(model.id)}
+                            title="Delete model binary file"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {/* Hardware Acceleration & OAuth Toggles */}
-          <div>
-            <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
-            <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
-              <div className="toggle-row">
-                <div className="toggle-meta">
-                  <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
-                  <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={npuEnabled}
-                    onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
-                  />
-                  <span className="slider-switch"></span>
-                </label>
-              </div>
-
-              <div className="toggle-row">
-                <div className="toggle-meta">
-                  <span className="toggle-label">OpenCL GPU Delegate</span>
-                  <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={gpuDelegateEnabled}
-                    onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
-                  />
-                  <span className="slider-switch"></span>
-                </label>
-              </div>
-
-              <div className="toggle-row">
-                <div className="toggle-meta">
-                  <span className="toggle-label">Gmail / Outlook Sync Integration</span>
-                  <span className="toggle-desc">Realtime background index of contextual emails.</span>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={gmailSync}
-                    onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
-                  />
-                  <span className="slider-switch"></span>
-                </label>
-              </div>
-
-              <div className="toggle-row">
-                <div className="toggle-meta">
-                  <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
-                  <span className="toggle-desc">Maintains automated git integrations.</span>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={githubSync}
-                    onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
-                  />
-                  <span className="slider-switch"></span>
-                </label>
-              </div>
-
-              <div className="toggle-row" style={{ paddingBottom: 0 }}>
-                <div className="toggle-meta">
-                  <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
-                  <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
-                </div>
-                <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
-                  <CheckCircle size={14} /> Active
-                </div>
-              </div>
-            </div>
-          </div>
-
         </div>
+
+        {/* Hardware Acceleration & OAuth Toggles */}
+        <div>
+          <span className="section-title">HARDWARE ACCELERATION & HARDENING</span>
+          <div className="card-panel toggles-card" style={{ marginTop: '0.5rem' }}>
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">Qualcomm Hexagon NPU Acceleration</span>
+                <span className="toggle-desc">Offloads INT4 matrix multiplications to device neural engine.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={npuEnabled}
+                  onChange={(e) => { playSynthSound('click'); setNpuEnabled(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">OpenCL GPU Delegate</span>
+                <span className="toggle-desc">Accelerates FP16 fallback operations on Adreno GPU.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={gpuDelegateEnabled}
+                  onChange={(e) => { playSynthSound('click'); setGpuDelegateEnabled(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">Gmail / Outlook Sync Integration</span>
+                <span className="toggle-desc">Realtime background index of contextual emails.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={gmailSync}
+                  onChange={(e) => { playSynthSound('click'); setGmailSync(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row">
+              <div className="toggle-meta">
+                <span className="toggle-label">GitHub OAuth Portfolio Sync</span>
+                <span className="toggle-desc">Maintains automated git integrations.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={githubSync}
+                  onChange={(e) => { playSynthSound('click'); setGithubSync(e.target.checked); }}
+                />
+                <span className="slider-switch"></span>
+              </label>
+            </div>
+
+            <div className="toggle-row" style={{ paddingBottom: 0 }}>
+              <div className="toggle-meta">
+                <span className="toggle-label">SQLCipher AES-256 Keystore Encryption</span>
+                <span className="toggle-desc">Secures local databases with hardware KeyStore anchors.</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--color-emerald)', fontSize: '0.75rem', fontWeight: 700 }}>
+                <CheckCircle size={14} /> Active
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
       )}
 
 
@@ -1785,9 +1784,9 @@ KEYWORDS MISSING: [comma-separated missing skills]
               <span className="iframe-loader-text">Loading Acro Engine...</span>
             </div>
           )}
-          <iframe
-            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`}
-            className="iframe-web"
+          <iframe 
+            src={`https://animlyy.web.app/?guest_key=${import.meta.env.VITE_GUEST_GROQ_API_KEY || ''}`} 
+            className="iframe-web" 
             title="Acro Learn Web Application"
             onLoad={() => setIsIframeLoading(false)}
           />
@@ -1813,7 +1812,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           <StickyNote size={20} />
           <span>Home</span>
         </button>
-        <button
+        <button 
           className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1823,7 +1822,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           <Cpu size={20} />
           <span>AI Models</span>
         </button>
-        <button
+        <button 
           className={`nav-item ${activeTab === 'animly' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1834,7 +1833,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           <Tv size={20} />
           <span>Acro Learn</span>
         </button>
-        <button
+        <button 
           className={`nav-item ${activeTab === 'placement' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1844,7 +1843,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           <Briefcase size={20} />
           <span>Placement Hub</span>
         </button>
-        <button
+        <button 
           className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
           onClick={() => {
             playSynthSound('click');
@@ -1856,7 +1855,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
         </button>
       </nav>
 
-      <button
+      <button 
         className={`chatbot-fab ${isChatOpen ? 'chat-open' : ''}`}
         onClick={() => {
           playSynthSound('click');
@@ -1874,7 +1873,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           {/* Chat Header */}
           <div className="chat-header">
             <div className="model-selector-container">
-              <button
+              <button 
                 className="model-selector-btn"
                 onClick={() => setIsDropdownOpen(prev => !prev)}
               >
@@ -1919,7 +1918,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                     );
                   })}
                   <div className="dropdown-divider"></div>
-                  <button
+                  <button 
                     className="extended-thinking-item"
                     onClick={() => {
                       playSynthSound('click');
@@ -1936,7 +1935,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
               )}
             </div>
 
-            <button
+            <button 
               className="chat-close-btn"
               onClick={() => {
                 playSynthSound('click');
@@ -1961,7 +1960,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                     }
                     return <div key={idx}>{line}</div>;
                   })}
-
+                  
                   {/* Basic Code block simulator inside chats */}
                   {msg.text.includes('```python') && (
                     <pre>
@@ -1982,7 +1981,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 </div>
               </div>
             ))}
-
+            
             {/* Typing indicator */}
             {isTyping && (
               <div className="chat-message-row model">
@@ -2002,7 +2001,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
               return (
                 <div className="chat-warning-banner">
                   <span>⚠️ Download this model to enable on-device AI inference (no internet needed).</span>
-                  <button
+                  <button 
                     className="chat-warning-link"
                     onClick={() => {
                       playSynthSound('click');
@@ -2020,7 +2019,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
           {/* Chat Input Bar */}
           <div className="chat-input-container">
-            <button
+            <button 
               className="chat-mic-btn"
               onClick={() => {
                 playSynthSound('click');
@@ -2030,8 +2029,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
             >
               <Mic size={18} />
             </button>
-            <input
-              type="text"
+            <input 
+              type="text" 
               className="chat-text-input"
               placeholder={modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded' ? "Ask anything (on-device)..." : "Download model first..."}
               value={chatInput}
@@ -2043,7 +2042,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
               }}
               disabled={!(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
             />
-            <button
+            <button 
               className="chat-send-btn"
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || isTyping || !(modelStates[chatModelId]?.status === 'installed' || modelStates[chatModelId]?.status === 'loaded')}
@@ -2060,8 +2059,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
       {activeTab === 'placement' && (
         <div className="placement-page-container">
           <div className="profile-page-header">
-            <button
-              className="btn btn-secondary back-nav-btn"
+            <button 
+              className="btn btn-secondary back-nav-btn" 
               onClick={() => {
                 playSynthSound('click');
                 setActiveTab('downloader');
@@ -2080,7 +2079,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
               <AlertTriangle size={48} className="error-card-icon" />
               <h3>Resume Not Uploaded</h3>
               <p>You must upload your resume in PDF format in your profile before you can use the Placement Hub analytics and ATS checker features.</p>
-              <button
+              <button 
                 className="btn btn-primary"
                 onClick={() => {
                   playSynthSound('click');
@@ -2105,23 +2104,23 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 <div className="placement-form">
                   <div className="form-group">
                     <label>Target Company</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Google, Stripe, Microsoft"
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Google, Stripe, Microsoft" 
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                     />
                   </div>
                   <div className="form-group">
                     <label>Job Role</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Frontend Engineer, ML Engineer"
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Frontend Engineer, ML Engineer" 
                       value={jobRole}
                       onChange={(e) => setJobRole(e.target.value)}
                     />
                   </div>
-                  <button
+                  <button 
                     className="btn btn-primary analyze-btn"
                     onClick={handleAnalyzeJobMatch}
                     disabled={isAnalyzingMatch}
@@ -2193,7 +2192,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 </p>
 
                 <div className="ats-trigger-section">
-                  <button
+                  <button 
                     className="btn btn-secondary analyze-btn"
                     onClick={handleAnalyzeATS}
                     disabled={isAnalyzingAts}
@@ -2262,8 +2261,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
       {activeTab === 'profile' && (
         <div className="profile-page-container">
           <div className="profile-page-header">
-            <button
-              className="btn btn-secondary back-nav-btn"
+            <button 
+              className="btn btn-secondary back-nav-btn" 
               onClick={() => {
                 playSynthSound('click');
                 setActiveTab('downloader');
@@ -2289,9 +2288,9 @@ KEYWORDS MISSING: [comma-separated missing skills]
               )}
               <label className="avatar-edit-badge" title="Change Profile Photo">
                 <Upload size={12} />
-                <input
-                  type="file"
-                  accept="image/*"
+                <input 
+                  type="file" 
+                  accept="image/*" 
                   onChange={handleAvatarUpload}
                   style={{ display: 'none' }}
                 />
@@ -2307,12 +2306,12 @@ KEYWORDS MISSING: [comma-separated missing skills]
           {/* Edit Profile Form */}
           <div className="profile-section">
             <h3 className="profile-section-title">Personal Details (Stored Locally)</h3>
-
+            
             <div className="form-group-row">
               <div className="form-group">
                 <label>Full Name</label>
-                <input
-                  type="text"
+                <input 
+                  type="text" 
                   value={studentProfile.name}
                   onChange={(e) => setStudentProfile({ ...studentProfile, name: e.target.value })}
                   placeholder="Student Full Name"
@@ -2320,8 +2319,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
               </div>
               <div className="form-group">
                 <label>Student ID</label>
-                <input
-                  type="text"
+                <input 
+                  type="text" 
                   value={studentProfile.studentId}
                   onChange={(e) => setStudentProfile({ ...studentProfile, studentId: e.target.value })}
                   placeholder="e.g. ACRO-2026-1024"
@@ -2331,8 +2330,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
             <div className="form-group">
               <label>Email Address</label>
-              <input
-                type="email"
+              <input 
+                type="email" 
                 value={studentProfile.email}
                 onChange={(e) => setStudentProfile({ ...studentProfile, email: e.target.value })}
                 placeholder="student@university.edu"
@@ -2341,8 +2340,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
             <div className="form-group">
               <label>Course / Major</label>
-              <input
-                type="text"
+              <input 
+                type="text" 
                 value={studentProfile.course}
                 onChange={(e) => setStudentProfile({ ...studentProfile, course: e.target.value })}
                 placeholder="Computer Science, Electronics..."
@@ -2351,8 +2350,8 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
             <div className="form-group">
               <label>Technical Skills</label>
-              <input
-                type="text"
+              <input 
+                type="text" 
                 value={studentProfile.skills}
                 onChange={(e) => setStudentProfile({ ...studentProfile, skills: e.target.value })}
                 placeholder="Python, Java, Android, Machine Learning"
@@ -2361,7 +2360,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
             <div className="form-group">
               <label>Bio / Summary</label>
-              <textarea
+              <textarea 
                 rows={2}
                 value={studentProfile.bio}
                 onChange={(e) => setStudentProfile({ ...studentProfile, bio: e.target.value })}
@@ -2369,7 +2368,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
               />
             </div>
 
-            <button
+            <button 
               className="btn btn-primary save-profile-btn"
               onClick={() => {
                 playSynthSound('success');
@@ -2383,7 +2382,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
           {/* Resume Section */}
           <div className="profile-section resume-section">
             <h3 className="profile-section-title">Student Resume Document</h3>
-
+            
             {studentProfile.resumeData ? (
               <div className="resume-preview-card">
                 <div className="resume-info">
@@ -2398,7 +2397,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 <div className="resume-inline-viewer">
                   <div className="resume-viewer-header">
                     <span>Document Live Preview</span>
-                    <button
+                    <button 
                       className="btn btn-secondary resume-external-link"
                       onClick={() => {
                         playSynthSound('click');
@@ -2416,7 +2415,7 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 </div>
 
                 <div className="resume-actions">
-                  <button
+                  <button 
                     className="btn btn-primary resume-action-btn"
                     onClick={handleDownloadResume}
                   >
@@ -2425,15 +2424,15 @@ KEYWORDS MISSING: [comma-separated missing skills]
 
                   <label className="btn btn-secondary resume-action-btn upload-replace-label">
                     <Upload size={14} /> Upload / Replace Resume
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.txt,image/*"
+                    <input 
+                      type="file" 
+                      accept=".pdf,.doc,.docx,.txt,image/*" 
                       onChange={handleResumeUpload}
                       style={{ display: 'none' }}
                     />
                   </label>
 
-                  <button
+                  <button 
                     className="btn btn-secondary resume-action-btn delete-resume-btn"
                     onClick={() => {
                       playSynthSound('delete');
@@ -2453,9 +2452,9 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 <p className="dropzone-desc">Select your resume file (PDF, DOCX, TXT, or Image)</p>
                 <label className="btn btn-primary upload-resume-btn">
                   <Upload size={16} /> Select Resume File
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt,image/*"
+                  <input 
+                    type="file" 
+                    accept=".pdf,.doc,.docx,.txt,image/*" 
                     onChange={handleResumeUpload}
                     style={{ display: 'none' }}
                   />
@@ -2476,14 +2475,14 @@ KEYWORDS MISSING: [comma-separated missing skills]
                 <span>{studentProfile.resumeName || 'Student_Resume.pdf'}</span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button
+                <button 
                   className="btn btn-primary"
                   style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                   onClick={handleDownloadResume}
                 >
                   <Download size={14} /> Download
                 </button>
-                <button
+                <button 
                   className="modal-close-btn"
                   onClick={() => setIsFullscreenResumeOpen(false)}
                 >
